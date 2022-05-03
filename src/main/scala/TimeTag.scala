@@ -14,12 +14,12 @@ class TimeTag(implicit rc: ReactorGlobalParams) extends Bundle {
 
 object TimeTag {
   def apply()(implicit rc: ReactorGlobalParams): TimeTag = {
-    val tag = WireInit(new TimeTag)
+    val tag = new TimeTag()
     tag
   }
 
   def apply(init: UInt)(implicit rc: ReactorGlobalParams): TimeTag = {
-    val tag = WireInit(new TimeTag)
+    val tag = Wire(new TimeTag())
     tag.tag := init
     tag
   }

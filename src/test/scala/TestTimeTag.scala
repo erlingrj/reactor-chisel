@@ -9,8 +9,8 @@ import chisel3.util.Valid
 
 class TestModule extends Module {
 
-  val rc = ReactorGlobalParams(numClkBits = 8)
-  val tag = TimeTag(0.U(8.W))(rc)
+  implicit val rc = ReactorGlobalParams(numClkBits = 8)
+  val tag = RegInit(TimeTag(1.U(3.W)))
 
 
 }

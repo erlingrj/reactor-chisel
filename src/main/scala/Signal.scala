@@ -23,7 +23,7 @@ object Signal {
   }
 
   def apply[T <: Data](gen: T, init: T)(implicit rc: ReactorGlobalParams): Signal[T] = {
-    val signal = WireInit(new Signal(gen))
+    val signal = Wire(new Signal(gen))
     signal.value := init
     signal
   }
@@ -38,12 +38,12 @@ class TaggedSignal[T <: Data](gen: T)(implicit rc: ReactorGlobalParams) extends 
 
 object TaggedSignal {
   def apply[T <: Data](gen: T)(implicit rc: ReactorGlobalParams): TaggedSignal[T] = {
-    val signal = WireInit(new TaggedSignal(gen))
+    val signal = Wire(new TaggedSignal(gen))
     signal
   }
 
   def apply[T <: Data](gen:T, initVal: T, initTag: UInt)(implicit rc: ReactorGlobalParams): TaggedSignal[T] = {
-    val signal = WireInit(new TaggedSignal(gen))
+    val signal = Wire(new TaggedSignal(gen))
     signal.tag := initTag
     signal.value := initVal
     signal
