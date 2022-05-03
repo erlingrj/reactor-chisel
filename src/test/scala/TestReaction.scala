@@ -5,11 +5,11 @@ import org.scalatest._
 import chiseltest._
 import chisel3.experimental.BundleLiterals._
 import chisel3.util.Valid
-
-class AddReaction extends Reaction("TestReaction", TestPorts) {
+/**
+class AddReaction extends Reaction(c = TestReactionConfig) {
 
   // Port references must be lazy so they dont reference and uninitialized field.s
-  lazy val out: Valid[Data] = io.get("out")
+  lazy val out: DecoupledIO[TaggedSignal[Data]] = io.get("out")
   lazy val in1: Valid[Data] = io.get("in1")
   lazy val in2: Valid[Data] = io.get("in2")
 
@@ -27,8 +27,6 @@ class AddReaction extends Reaction("TestReaction", TestPorts) {
 class TestReaction extends FlatSpec with ChiselScalatestTester with Matchers {
 
   def initClocks(c: Reaction): Unit = {
-    c.io.inPorts.map(_.initSource().setSourceClock(c.clock))
-    c.io.outPorts.map(_.initSink().setSinkClock(c.clock))
   }
 
 
@@ -59,3 +57,5 @@ class TestReaction extends FlatSpec with ChiselScalatestTester with Matchers {
   }
 
 }
+
+**/

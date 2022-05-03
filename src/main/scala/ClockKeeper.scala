@@ -11,7 +11,7 @@ abstract class AbstractClockKeeper extends Module {
 }
 
 class NextEvent(implicit rc: ReactorGlobalParams) extends Bundle {
-  val tag = Tag()
+  val tag = TimeTag()
   val empty = Bool()
 }
 
@@ -21,20 +21,20 @@ class TopClockKeeper(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends
 
 class ClockKeeperIO(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends Bundle {
 
-  val actionTags = Vec(c.actions.length, Decoupled(Tag()))
+  val actionTags = Vec(c.actions.length, Decoupled(TimeTag()))
   val actionsBusy = Vec(c.actions.length, Input(Bool()))
 
-  val timerTags = Vec(c.timers.length, Decoupled(Tag()))
+  val timerTags = Vec(c.timers.length, Decoupled(TimeTag()))
   val timersBusy = Vec(c.timers.length, Input(Bool()))
 
-  val reactorTags = Vec(c.reactors.length, Decoupled(Tag()))
+  val reactorTags = Vec(c.reactors.length, Decoupled(TimeTag()))
   val reactorsBusy = Vec(c.reactors.length, Input(Bool()))
 
-  val logicalTimeOut = Decoupled(Tag())
-  val nextEvent = Decoupled(Tag())
+  val logicalTimeOut = Decoupled(TimeTag())
+  val nextEvent = Decoupled(TimeTag())
   val waitForFinish = Flipped(Decoupled(UInt(0.W)))
 
-  val logicalTimeIn = Flipped(Decoupled(Tag()))
+  val logicalTimeIn = Flipped(Decoupled(TimeTag()))
   val startScheduler = Decoupled(UInt(0.W))
 
 
@@ -44,7 +44,7 @@ class ClockKeeperIO(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends 
     timerTags.map(_.ready := false.B)
     reactorTags.map(_.ready := false.B)
     logicalTimeOut.valid := false.B
-    logicalTimeOut.bits := Tag(0.U)
+    logicalTimeOut.bits := TimeTag(0.U)
   }
 
   def subElementsBusy(): Bool = {
@@ -66,20 +66,20 @@ class ClockKeeper(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends Ab
   val io = IO(new ClockKeeperIO(c))
   io.tieOff()
 
-  val logicalTime = RegInit(Tag(0.U))
-  val physicalTime = RegInit(Tag(0.U))
+  val logicalTime = RegInit(TimeTag(0.U))
+  val physicalTime = RegInit(TimeTag(0.U))
 
   val execSchedule = if(c.getNumReactorLevels() > 0) Some(Module(new ExecutionSchedule(c))) else None
-  val sorter = Module(new TreeSorter(Tag(), io.nSubElements())).io
-  sorter.in.bits := Tag(0.U)
+  val sorter = Module(new TreeSorter(TimeTag(), io.nSubElements())).io
+  sorter.in.bits := TimeTag(0.U)
   sorter.in.valid := false.B
 
 
-  val regNextEvent = RegInit(Tag(0.U))
+  val regNextEvent = RegInit(TimeTag(0.U))
   val regNextEventValid = RegInit(false.B)
   def connectSorter(): Unit = {
     for ((e,i) <- (io.actionTags ++ io.timerTags ++ io.reactorTags).zipWithIndex) {
-      sorter.in.bits(i) := Mux(e.valid, e.bits, Tag(0.U))
+      sorter.in.bits(i) := Mux(e.valid, e.bits, TimeTag(0.U))
     }
   }
   physicalTime.tag := physicalTime.tag + 1.U
@@ -121,7 +121,7 @@ class ClockKeeper(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends Ab
           regState := sSorting
         }. otherwise {
           regState := sIdle
-          regNextEvent := Tag(0.U)
+          regNextEvent := TimeTag(0.U)
           regNextEventValid := false.B
         }
       }

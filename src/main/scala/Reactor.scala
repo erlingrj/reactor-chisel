@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 import chisel3.experimental.DataMirror
 
-abstract class ReactorElement(val id: String) extends Module {
+abstract class ReactorElement extends Module {
 
 }
 
@@ -38,7 +38,7 @@ class ReactorIO(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends Bund
   }
 }
 
-abstract class Reactor(override val id: String, val top: Boolean, c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends ReactorElement(id) {
+abstract class Reactor(val top: Boolean, c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends ReactorElement {
   val io = IO(new ReactorIO(c))
 
   // Clocks
@@ -70,7 +70,7 @@ abstract class Reactor(override val id: String, val top: Boolean, c: ReactorConf
 
     // If function has not returned yet, throw assertion
     assert(false.B, s"[Reaction.scala] ReactionIO.get did not find port with name= $name")
-    new Timer(new TimerConfig("null", 0, 0, new TimerPortConfig("null")))
+    new Timer(new TimerConfig(id="null", interval=0, offset=0,numAntiDependencies=0, out=TimerPortConfig(id="null")))
   }
 
   // Make connections. A little clunky since we must first find the connectionType and then

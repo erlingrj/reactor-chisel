@@ -11,21 +11,22 @@ import chisel3.util._
 
 
 class OutPortIO[T <: Data](c: ReactorOutputPortConfig[T])(implicit rc: ReactorGlobalParams) extends Bundle {
-  val write = Vec(c.numAntiDependencies, Flipped(Decoupled(Signal[T])))
+  val write = Vec(c.numAntiDependencies, Flipped(Decoupled(Signal(c.gen))))
   val push = Input(Bool())
 
-  val out = Decoupled(Signal[T])
+  val out = Decoupled(Signal(c.gen))
   def tieOff() = {
     out.valid := false.B
-    out.bits := 0.U.asTypeOf(Signal[T])
+    out.bits := 0.U.asTypeOf(Signal(c.gen))
     write.map(_.ready := false.B)
   }
 }
 
 class OutPort[T <: Data](c: ReactorOutputPortConfig[T])(implicit rc: ReactorGlobalParams) extends Module {
   val io = IO(new OutPortIO(c))
+  io.tieOff()
 
-  val regBuf = RegInit(0.U.asTypeOf(Signal[T]))
+  val regBuf = RegInit(0.U.asTypeOf(Signal(c.gen)))
   val regBufVal = RegInit(false.B)
 
   val sRecv :: sSend :: Nil = Enum(2)
@@ -62,14 +63,14 @@ class OutPort[T <: Data](c: ReactorOutputPortConfig[T])(implicit rc: ReactorGlob
 }
 
 
-class InPortIO[T <: Data](c: ReactorInputPortConfig[T])(implicit rc: ReactorGlobalParams) {
-  val in = Flipped(Decoupled(Signal[T]))
-  val read = Decoupled(Signal[T])
+class InPortIO[T <: Data](c: ReactorInputPortConfig[T])(implicit rc: ReactorGlobalParams) extends Bundle {
+  val in = Flipped(Decoupled(Signal(c.gen)))
+  val read = Decoupled(Signal(c.gen))
 
   def tieOff() = {
     in.ready := false.B
     read.valid := false.B
-    read.bits := 0.U.asTypeOf(Signal[T])
+    read.bits := 0.U.asTypeOf(Signal(c.gen))
   }
 }
 
@@ -79,7 +80,7 @@ class InPort[T <: Data](c: ReactorInputPortConfig[T])(implicit rc: ReactorGlobal
   val io = IO(new InPortIO(c))
   io.tieOff()
 
-  val regBuf = RegInit(0.U.asTypeOf(Signal[T]))
+  val regBuf = RegInit(0.U.asTypeOf(Signal(c.gen)))
   val regBufVal = RegInit(false.B)
 
 
@@ -105,7 +106,7 @@ class InPort[T <: Data](c: ReactorInputPortConfig[T])(implicit rc: ReactorGlobal
       when(io.read.fire) {
         regFired := regFired + 1.U
         when (regFired === (c.numDependencies-1).U) {
-          regBuf := 0.U.asTypeOf(Signal[T])
+          regBuf := 0.U.asTypeOf(Signal(c.gen))
           regBufVal := false.B
           regState := sRecv
           regFired := 0.U

@@ -19,10 +19,10 @@ class ReactionIO(c: ReactionConfig)(implicit rc: ReactorGlobalParams) extends Bu
   val arbiterEn = new ReactionEnableIO()
 
   // Input ports
-  val dependencies = MixedVec(for (inPort <- c.dependencies) yield Flipped(Decoupled(new TaggedSignal)))
-  val antiDependencies = MixedVec(for (inPort <- c.antiDependencies) yield Decoupled(new TaggedSignal))
-  val triggers = MixedVec(for (inPort <- c.triggers) yield Flipped(Decoupled(new TaggedSignal)))
-  val schedules = MixedVec(for (inPort <- c.schedules) yield Decoupled(new TaggedSignal))
+  val dependencies = MixedVec(for (inPort <- c.dependencies) yield Flipped(Decoupled(TaggedSignal(inPort.gen))))
+  val antiDependencies = MixedVec(for (inPort <- c.antiDependencies) yield Decoupled(TaggedSignal(inPort.gen)))
+  val triggers = MixedVec(for (inPort <- c.triggers) yield Flipped(Decoupled(TaggedSignal(inPort.gen))))
+  val schedules = MixedVec(for (inPort <- c.schedules) yield Decoupled(new TaggedSignal(inPort.gen)))
 
 
   // Return the port
@@ -45,7 +45,7 @@ class ReactionIO(c: ReactionConfig)(implicit rc: ReactorGlobalParams) extends Bu
 
     // If function has not returned yet, throw assertion
     assert(false.B, s"[Reaction.scala] ReactionIO.get did not find port with name= $name")
-    WireInit(Decoupled(TaggedSignal(0.U, 0.U)))
+    WireInit(Decoupled(TaggedSignal(UInt(1.W), 0.U, 0.U)))
   }
 
   def tieOff: Unit = {
@@ -60,7 +60,7 @@ class ReactionIO(c: ReactionConfig)(implicit rc: ReactorGlobalParams) extends Bu
 }
 
 
-abstract class Reaction(c: ReactionConfig)(implicit rc: ReactorGlobalParams) extends ReactorElement(id = c.id) {
+abstract class Reaction(c: ReactionConfig)(implicit rc: ReactorGlobalParams) extends ReactorElement {
   val io = IO(new ReactionIO(c))
   io.tieOff
 

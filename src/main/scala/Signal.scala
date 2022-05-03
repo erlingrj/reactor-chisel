@@ -1,8 +1,6 @@
 package reactor
 
 import chisel3._
-import chisel3.util._
-
 
 /**
  * A signal is what carries information between the Reactors
@@ -14,18 +12,18 @@ abstract class BaseSignal extends Bundle {
 
 }
 
-class Signal[T <: Data] extends BaseSignal {
-  val value = new T
+class Signal[T <: Data](gen: T) extends BaseSignal {
+  val value: T = gen
 }
 
 object Signal {
-  def apply[T <: Data](implicit rc: ReactorGlobalParams): Signal[T] = {
-    val signal = WireInit(new Signal[T])
+  def apply[T <: Data](gen: T)(implicit rc: ReactorGlobalParams): Signal[T] = {
+    val signal = new Signal(gen)
     signal
   }
 
-  def apply[T <: Data](init: T)(implicit rc: ReactorGlobalParams): Signal[T] = {
-    val signal = WireInit(new Signal[T])
+  def apply[T <: Data](gen: T, init: T)(implicit rc: ReactorGlobalParams): Signal[T] = {
+    val signal = WireInit(new Signal(gen))
     signal.value := init
     signal
   }
@@ -33,28 +31,26 @@ object Signal {
 }
 
 
-class TaggedSignal[T <: Data](implicit rc: ReactorGlobalParams) extends Signal[T] {
-  val tag = Tag()
+class TaggedSignal[T <: Data](gen: T)(implicit rc: ReactorGlobalParams) extends Signal(gen) {
+  val tag: TimeTag = TimeTag()
 }
 
 
 object TaggedSignal {
-  def apply[T <: Data](implicit rc: ReactorGlobalParams): TaggedSignal[T] = {
-    val signal = WireInit(new TaggedSignal[T])
+  def apply[T <: Data](gen: T)(implicit rc: ReactorGlobalParams): TaggedSignal[T] = {
+    val signal = WireInit(new TaggedSignal(gen))
     signal
   }
 
-  def apply[T <: Data](initVal: T, initTag: UInt)(implicit rc: ReactorGlobalParams): TaggedSignal[T] = {
-    val signal = WireInit(new TaggedSignal[T])
+  def apply[T <: Data](gen:T, initVal: T, initTag: UInt)(implicit rc: ReactorGlobalParams): TaggedSignal[T] = {
+    val signal = WireInit(new TaggedSignal(gen))
     signal.tag := initTag
     signal.value := initVal
     signal
   }
-
 }
 
 
 
 class EmptySignal extends BaseSignal {
-
 }

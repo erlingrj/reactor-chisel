@@ -5,26 +5,26 @@ import chisel3.util._
 
 
 class ActionIO[T <: Data](c : ActionConfig[T])(implicit rc: ReactorGlobalParams) extends Bundle {
-  val nextEvent = Valid(new TaggedSignal)
-  val outPort = Decoupled(new TaggedSignal)
-  val schedule = Flipped(Decoupled(new TaggedSignal))
+  val nextEvent = Valid(TimeTag())
+  val outPort = Decoupled(TaggedSignal(c.gen))
+  val schedule = Flipped(Decoupled(TaggedSignal(c.gen)))
   val busy = Output(Bool())
 
-  val logicalTime = Flipped(Valid(Tag()))
+  val logicalTime = Flipped(Valid(TimeTag()))
 
   def tieOff() = {
-    outPort.bits := 0.U.asTypeOf(new TaggedSignal)
+    outPort.bits := 0.U.asTypeOf(TaggedSignal(c.gen))
     outPort.valid := false.B
     schedule.ready := false.B
     busy := false.B
   }
 }
 
-class Action[T <: Data](c: ActionConfig[T])(implicit rc: ReactorGlobalParams) extends ReactorElement(id = c.id) {
+class Action[T <: Data](c: ActionConfig[T])(implicit rc: ReactorGlobalParams) extends ReactorElement {
   val io = IO(new ActionIO(c))
   val eventQ = Module(new OrderedRegQueue[T](c.eventQueueConfig)).io
 
-  val regLogicalTime = RegInit(Tag(0.U))
+  val regLogicalTime = RegInit(TimeTag(0.U))
 
   // Outport
   io.outPort.bits.value := eventQ.deq.bits.value
@@ -51,11 +51,11 @@ class Action[T <: Data](c: ActionConfig[T])(implicit rc: ReactorGlobalParams) ex
 }
 
 class TimerIO(tc: TimerConfig)(implicit rc: ReactorGlobalParams) extends Bundle {
-  val nextEvent = Valid(new Tag)
+  val nextEvent = Valid(new TimeTag)
   val outPort = Decoupled(new EmptySignal)
 }
 
-class Timer[T <: Data](c: TimerConfig)(implicit rc: ReactorGlobalParams) extends ReactorElement(id = c.id) {
+class Timer[T <: Data](c: TimerConfig)(implicit rc: ReactorGlobalParams) extends ReactorElement {
   val io = IO(new TimerIO(c))
 }
 

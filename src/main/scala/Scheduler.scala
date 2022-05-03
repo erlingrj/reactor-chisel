@@ -119,7 +119,7 @@ class ExecutionScheduleIO(c: ReactorConfig)(implicit rc: ReactorGlobalParams) ex
   }
 }
 
-class ExecutionSchedule(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends ReactorElement(id="exec-schedule") {
+class ExecutionSchedule(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends Module {
   // Find number of levels:
   val levels = c.getNumReactorLevels()
   val _reactionLevels = ListBuffer[Seq[Int]]()
