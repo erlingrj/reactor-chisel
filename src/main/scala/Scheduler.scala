@@ -13,6 +13,7 @@ class SchedulerIO(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends Bu
   val execute = Flipped(Decoupled(UInt(0.W)))
   val arbiterEn = Decoupled(UInt(0.W))
   val reactorsEn = Vec(c.reactors.length, Decoupled(UInt(0.W)))
+  val schedEn = Decoupled(UInt(0.W))
 
 
   def tieOff(): Unit = {
@@ -28,7 +29,7 @@ class Scheduler(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends Modu
 
   val execSchedule = if(levels > 0) Some(Module(new ExecutionSchedule(c))) else None
 
-  val sIdle :: sExec :: sBlock :: Nil = Enum(3)
+  val sIdle :: sExec :: sBlock :: sWaitForSched :: Nil = Enum(4)
   val regStateArb = RegInit(sIdle)
   val regStateReactors = RegInit(sIdle)
   val regSchedule = RegInit(VecInit(Seq.fill(c.reactors.length)(false.B)))
@@ -50,6 +51,12 @@ class Scheduler(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends Modu
       }
     is (sBlock) {
       when(io.arbiterEn.ready) {
+        regStateArb := sIdle
+      }
+    }
+    is (sWaitForSched) {
+      io.schedEn.valid := true.B
+      when (io.schedEn.fire) {
         regStateArb := sIdle
       }
     }
