@@ -10,7 +10,7 @@ case class EventQueueConfig[T <: Data](
 ) {
   require(isPow2(size), "[EventQueue] event queue size must be pow2")
 
-  def addrBits = log2Ceil(size)
+  def addrBits = log2Ceil(size) + 1
 }
 
 object EventQueueConfig {
@@ -18,7 +18,10 @@ object EventQueueConfig {
 }
 
 
-
+/**
+ * The EventQueue is an ordered queue that has a single enqueue and a single dequeue
+ * when an event is enqueued the queue is sorted and nothing can be dequeued
+ */
 class EventQueueIO[T <: Data](c: EventQueueConfig[T])(implicit rc: ReactorGlobalParams) extends Bundle {
   val deq = Decoupled(new TaggedSignal(c.gen))
   val enq = Flipped(Decoupled(new TaggedSignal(c.gen)))
@@ -40,11 +43,16 @@ class EventQueueIO[T <: Data](c: EventQueueConfig[T])(implicit rc: ReactorGlobal
 
 abstract class EventQueue[T <: Data](c: EventQueueConfig[T])(implicit rc: ReactorGlobalParams) extends Module {
   val io = IO(new EventQueueIO(c))
+  io.tieOff()
 
   def getHead(): DecoupledIO[TaggedSignal[T]]
 }
 
-
+/**
+ * OrderedRegQueue is an ordered queue based on registers
+ * When a new event is added. The queue enters sorting state where it finds the correct place
+ * for the event and moves everything accordingly
+ */
 
 class OrderedRegQueue[T <: Data](c: EventQueueConfig[T])(implicit rc: ReactorGlobalParams) extends EventQueue[T](c) {
 
@@ -79,7 +87,7 @@ class OrderedRegQueue[T <: Data](c: EventQueueConfig[T])(implicit rc: ReactorGlo
 
     is (sReady) {
       io.enq.ready := regSize < c.size.U
-      io.deq := getHead()
+      io.deq <> getHead()
 
       val enq = WireInit(0.U(2.W))
       val deq = WireInit(0.U(2.W))
@@ -103,7 +111,7 @@ class OrderedRegQueue[T <: Data](c: EventQueueConfig[T])(implicit rc: ReactorGlo
       io.sorting := true.B
       val qIdx = regHeadPtr + regSortIdx
 
-      when (regSize === 0.U) {
+      when (regSize === 1.U) {
         assert(regHeadPtr === regTailPtr, "[EventQueue] Size = 0 but head != tail")
         regQueue(regHeadPtr) := regEnqueued
         regTailPtr := regTailPtr + 1.U
@@ -113,7 +121,7 @@ class OrderedRegQueue[T <: Data](c: EventQueueConfig[T])(implicit rc: ReactorGlo
         regQueue(qIdx) := regReplaced
         regReplaced := regQueue(qIdx)
       }.otherwise {
-        when (regEnqueued.tag.tag < regQueue(qIdx).tag.tag || regSortIdx === regSize) {
+        when (regEnqueued.tag.tag < regQueue(qIdx).tag.tag || regSortIdx === (regSize - 1.U)) {
           regQueue(qIdx) := regEnqueued
           regReplaced := regQueue(qIdx)
           regSortFoundLoc := true.B
@@ -122,17 +130,13 @@ class OrderedRegQueue[T <: Data](c: EventQueueConfig[T])(implicit rc: ReactorGlo
 
       regSortIdx := regSortIdx + 1.U
 
-      when (regSortIdx === regSize) {
+      when (regSortIdx === (regSize-1.U)) {
         regState := sReady
+        regTailPtr := regTailPtr + 1.U
       }
     }
   }
 
-
-  // Assertions
-  when (regHeadPtr === regTailPtr) {
-    assert(regSize === c.size.U || regSize === 0.U, "[EventQueue] headPtr === tailPtr but not full/empty")
-  }
 
   when (RegNext(io.enq.fire)) {
     assert(regState === sSorting, "[EventQueue] enqueud, but did not move into sorting state")
