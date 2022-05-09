@@ -121,7 +121,7 @@ abstract class Reactor(val top: Boolean, c: ReactorConfig)(implicit rc: ReactorG
       val dst = getElement(dstId).asInstanceOf[Reaction]
       val dstPort = dst.io.get(dstPortId)
 
-      val src = getElement(srcId).asInstanceOf[Timer[_<:Data]]
+      val src = getElement(srcId).asInstanceOf[Timer]
       val srcPort = src.io.outPort
 
       require(dstPort.getClass == srcPort.getClass,

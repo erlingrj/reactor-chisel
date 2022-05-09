@@ -45,7 +45,7 @@ class ReactionIO(c: ReactionConfig)(implicit rc: ReactorGlobalParams) extends Bu
 
     // If function has not returned yet, throw assertion
     assert(false.B, s"[Reaction.scala] ReactionIO.get did not find port with name= $name")
-    WireInit(Decoupled(TaggedSignal(UInt(1.W), 0.U, 0.U)))
+    WireInit(Decoupled(TaggedSignal(UInt(1.W), 0.U, TimeTag(0.U))))
   }
 
   def tieOff: Unit = {

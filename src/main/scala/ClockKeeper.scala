@@ -32,10 +32,10 @@ class ClockKeeperIO(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends 
 
   val logicalTimeOut = Decoupled(TimeTag())
   val nextEvent = Decoupled(TimeTag())
-  val waitForFinish = Flipped(Decoupled(UInt(0.W)))
+  val waitForFinish = Flipped(Decoupled())
 
   val logicalTimeIn = Flipped(Decoupled(TimeTag()))
-  val startScheduler = Decoupled(UInt(0.W))
+  val startScheduler = Decoupled()
 
 
 
@@ -80,7 +80,9 @@ class ClockKeeper(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends Ab
   def connectSorter(): Unit = {
     for ((e,i) <- (io.actionTags ++ io.timerTags ++ io.reactorTags).zipWithIndex) {
       sorter.in.bits(i) := Mux(e.valid, e.bits, TimeTag(0.U))
+      e.ready := sorter.in.ready
     }
+    sorter.in.valid := (io.actionTags ++ io.timerTags ++ io.reactorTags).map(_.valid).reduce(_||_)
   }
   physicalTime.tag := physicalTime.tag + 1.U
   io.logicalTimeOut.bits := logicalTime
@@ -117,7 +119,7 @@ class ClockKeeper(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends Ab
         // Go to sorting stage
         regState := sSorting
         connectSorter()
-        when ((io.timerTags ++ io.actionTags ++ io.reactorTags).map(_.valid).reduce(_||_)) {
+        when (sorter.in.fire) {
           regState := sSorting
         }. otherwise {
           regState := sIdle

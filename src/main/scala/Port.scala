@@ -86,7 +86,7 @@ class InPort[T <: Data](c: ReactorInputPortConfig[T])(implicit rc: ReactorGlobal
 
   val sRecv :: sSend :: Nil = Enum(2)
   val regState = RegInit(sRecv)
-  val regFired = RegInit(0.U(log2Ceil(c.numDependencies).W))
+  val regFired = RegInit(0.U(log2Ceil(c.numDependencies+1).W))
 
   switch (regState) {
 

@@ -10,6 +10,19 @@ import chisel3._
 
 class TimeTag(implicit rc: ReactorGlobalParams) extends Bundle {
   val tag: UInt = UInt(rc.numClkBits.W)
+
+  def +(that: TimeTag) = TimeTag(this.tag + that.tag)
+  def -(that: TimeTag) = TimeTag(this.tag - that.tag)
+
+  def +(that: UInt) = TimeTag(this.tag + that)
+  def -(that: UInt) = TimeTag(this.tag - that)
+
+  def <(that: TimeTag): Bool = this.tag < that.tag
+  def <=(that: TimeTag): Bool = this.tag <= that.tag
+  def >(that: TimeTag): Bool = this.tag > that.tag
+  def >=(that: TimeTag): Bool = this.tag >= that.tag
+  def ===(that: TimeTag): Bool = this.tag === that.tag
+
 }
 
 object TimeTag {

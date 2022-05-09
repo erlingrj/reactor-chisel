@@ -10,10 +10,10 @@ abstract class AbstractScheduler extends Module
 class SchedulerIO(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends Bundle {
 
 
-  val execute = Flipped(Decoupled(UInt(0.W)))
-  val arbiterEn = Decoupled(UInt(0.W))
-  val reactorsEn = Vec(c.reactors.length, Decoupled(UInt(0.W)))
-  val schedEn = Decoupled(UInt(0.W))
+  val execute = Flipped(Decoupled())
+  val arbiterEn = Decoupled()
+  val reactorsEn = Vec(c.reactors.length, Decoupled())
+  val schedEn = Decoupled()
 
 
   def tieOff(): Unit = {

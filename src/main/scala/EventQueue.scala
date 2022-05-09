@@ -51,7 +51,7 @@ abstract class EventQueue[T <: Data](c: EventQueueConfig[T])(implicit rc: Reacto
 /**
  * OrderedRegQueue is an ordered queue based on registers
  * When a new event is added. The queue enters sorting state where it finds the correct place
- * for the event and moves everything accordingly
+ * for the event and moves everything accordingly. It is quite slow and expensive but it works. For now
  */
 
 class OrderedRegQueue[T <: Data](c: EventQueueConfig[T])(implicit rc: ReactorGlobalParams) extends EventQueue[T](c) {
