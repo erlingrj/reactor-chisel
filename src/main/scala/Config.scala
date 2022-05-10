@@ -6,7 +6,7 @@ import chisel3.util._
 import scala.collection.mutable.ListBuffer
 
 abstract class ReactorElementConfig {
-  val id: String
+  val id: String = "null"
 }
 
 abstract class PortConfig extends ReactorElementConfig
@@ -17,75 +17,75 @@ abstract class OutputPortConfig extends PortConfig {
 }
 
 case class ReactorInputPortConfig[T <: Data](
- override val id: String,
-  numDependencies: Int,
-  gen: T
+ override val id: String = "null",
+  numDependencies: Int = 1,
+  gen: T = UInt(8.W)
 ) extends InputPortConfig
 
 case class ReactorOutputPortConfig[T <: Data](
-  override val id: String,
-  numAntiDependencies: Int,
-  gen: T
+  override val id: String = "null",
+  numAntiDependencies: Int = 1,
+  gen: T = UInt(8.W)
 ) extends OutputPortConfig
 
 case class ReactionTriggerConfig[T <: Data](
-  override val id: String,
-  gen: T
+  override val id: String = "null",
+  gen: T = UInt(8.W)
 ) extends InputPortConfig
 
 case class ReactionAntiDependencyConfig[T <: Data](
-  override val id: String,
-  gen: T
+  override val id: String = "null",
+  gen: T = UInt(8.W)
 ) extends OutputPortConfig
 
 case class ReactionSchedulePortConfig[T <: Data](
-  override val id: String,
-  gen: T
+  override val id: String = "null",
+  gen: T = UInt(8.W)
 ) extends OutputPortConfig
 
 case class ReactionDependencyConfig[T <: Data](
-  override val id: String,
-  gen: T
+  override val id: String = "null",
+  gen: T = UInt(8.W)
 ) extends InputPortConfig
 
 case class SchedulePortConfig[T <: Data](
-  override val id: String,
-  gen: T
+  override val id: String = "null",
+  gen: T = UInt(8.W)
 ) extends InputPortConfig
 
 case class ActionPortConfig[T <: Data](
-  override val id: String,
-  gen: T
+  override val id: String = "null",
+  gen: T = UInt(8.W)
 ) extends OutputPortConfig
 
 case class TimerPortConfig(
-  override val id: String,
+  override val id: String = "null",
 ) extends OutputPortConfig
 
 case class ActionConfig[T <: Data](
-  override val id: String,
-  gen: T,
-  out: ActionPortConfig[T],
-  in: SchedulePortConfig[T],
-  numAntiDependencies: Int,
+  override val id: String = "null",
+  gen: T = UInt(8.W),
+  out: ActionPortConfig[T] = ActionPortConfig(),
+  in: SchedulePortConfig[T] = SchedulePortConfig(),
+  numAntiDependencies: Int = 1,
 ) extends ReactorElementConfig {
   val eventQueueConfig: EventQueueConfig[T] = EventQueueConfig(8, gen)
 }
 
 case class TimerConfig(
-  override val id: String,
-  interval: Int,
-  offset: Int,
-  out: TimerPortConfig,
-  numAntiDependencies: Int
+  override val id: String = "null",
+  interval: Int = 0,
+  offset: Int = 10,
+  out: TimerPortConfig = TimerPortConfig(),
+  numAntiDependencies: Int = 1
 ) extends ReactorElementConfig
 
 case class ReactionConfig(
-  override val id: String,
+  override val id: String = "null",
   triggers: Seq[ReactionTriggerConfig[_<:Data]] = Seq(),
   dependencies: Seq[ReactionDependencyConfig[_<:Data]] = Seq(),
   antiDependencies: Seq[ReactionAntiDependencyConfig[_<:Data]] = Seq(),
-  schedules: Seq[ReactionSchedulePortConfig[_<:Data]] = Seq()
+    schedules: Seq[ReactionSchedulePortConfig[_<:Data]] = Seq()
 ) extends ReactorElementConfig
 
 
@@ -107,35 +107,40 @@ case class ConnectionConfig(
 )
 
 case class ReactorConfig(
-  override val id: String,
-  top: Boolean,
-  actions: Seq[ActionConfig[_<:Data]],
-  timers: Seq[TimerConfig],
-  reactions: Seq[ReactionConfig],
-  inPorts: Seq[ReactorInputPortConfig[_<:Data]],
-  outPorts: Seq[ReactorOutputPortConfig[_<:Data]],
-  connections: Seq[ConnectionConfig],
-  reactors: Seq[ReactorConfig],
-  level: Int // Highest number of edges to an input port
+  override val id: String = "null",
+  top: Boolean = false,
+  actions: Seq[ActionConfig[_<:Data]] = Seq(),
+  timers: Seq[TimerConfig] = Seq(),
+  reactions: Seq[ReactionConfig] = Seq(),
+  inPorts: Seq[ReactorInputPortConfig[_<:Data]] = Seq(),
+  outPorts: Seq[ReactorOutputPortConfig[_<:Data]] = Seq(),
+  connections: Seq[ConnectionConfig] = Seq(),
+  reactors: Seq[ReactorConfig] = Seq(),
+  reactorsLevel: Seq[Int] = Seq() // THe level of each Reactor
 ) extends ReactorElementConfig {
   def numReactions = reactions.length
   def getReactorIndicesOnLevel(level: Int): Seq[Int] = {
     val res = ListBuffer[Int]()
     for (i <- 0 until reactors.length) {
-      if (reactors(i).level == level) {
+      if (reactorsLevel(i) == level) {
         res.append(i)
       }
     }
     res.toSeq
   }
+
   def getNumReactorLevels(): Int = {
     var res = 0
-    for (cReactor <- reactors) {
-      if (cReactor.level > res) {
-        res = cReactor.level
+    for (lvl <- reactorsLevel) {
+      if (lvl > res) {
+        res = lvl+1
       }
     }
     res
+  }
+
+  def verify(): Unit = {
+    require(reactors.length == reactorsLevel.length)
   }
 
 }
@@ -194,7 +199,13 @@ object ExampleConfig {
     inPorts = Seq(),
     outPorts = Seq(),
     reactors = Seq(),
-    level = -1, // Top Reactor
+  )
+
+
+  val cReactor1 = ReactorConfig(
+    id = "contained",
+    top = false,
+    actions = Seq()
   )
 }
 

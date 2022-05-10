@@ -5,6 +5,7 @@ import org.scalatest._
 import chiseltest._
 import chisel3.experimental.BundleLiterals._
 import chisel3.util.Valid
+import org.scalatest.flatspec.AnyFlatSpec
 
 
 class TestModule extends Module {
@@ -16,7 +17,7 @@ class TestModule extends Module {
 }
 
 
-class TestTimeTag extends FlatSpec with ChiselScalatestTester with Matchers {
+class TestTimeTag extends AnyFlatSpec with ChiselScalatestTester {
 
 
   behavior of "TestTag"

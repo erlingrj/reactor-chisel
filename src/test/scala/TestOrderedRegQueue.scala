@@ -5,8 +5,9 @@ import chisel3.experimental.BundleLiterals.AddBundleLiteralConstructor
 import chisel3.util._
 import chiseltest._
 import org.scalatest._
+import org.scalatest.flatspec.AnyFlatSpec
 
-class TestOrderedRegQueue extends FlatSpec with ChiselScalatestTester with Matchers {
+class TestOrderedRegQueue extends AnyFlatSpec with ChiselScalatestTester {
 
   def initClocks(c: EventQueue[_ <: Data]): Unit = {
     c.io.enq.initSource().setSourceClock(c.clock)

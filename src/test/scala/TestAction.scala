@@ -5,8 +5,9 @@ import chisel3.experimental.BundleLiterals.AddBundleLiteralConstructor
 import chisel3.util._
 import chiseltest._
 import org.scalatest._
+import org.scalatest.flatspec.AnyFlatSpec
 
-class TestAction extends FlatSpec with ChiselScalatestTester with Matchers {
+class TestAction extends AnyFlatSpec with ChiselScalatestTester {
 
   def initClocks(c: Action[_ <: Data]): Unit = {
    c.io.nextEvent.initSink().setSinkClock(c.clock)

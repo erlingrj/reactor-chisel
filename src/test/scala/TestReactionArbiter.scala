@@ -5,9 +5,9 @@ import chisel3._
 import chisel3.experimental.BundleLiterals.AddBundleLiteralConstructor
 import chisel3.util._
 import chiseltest._
-import org.scalatest.{FlatSpec, Matchers}
+import org.scalatest.flatspec.AnyFlatSpec
 
-class TestReactionArbiter extends FlatSpec with ChiselScalatestTester with Matchers {
+class TestReactionArbiter extends AnyFlatSpec with ChiselScalatestTester {
 
   def initClocks(implicit c: ReactionArbiter): Unit = {
     c.io.enableIn.initSource().setSourceClock(c.clock)

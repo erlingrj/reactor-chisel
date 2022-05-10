@@ -69,6 +69,7 @@ class ClockKeeperIO(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends 
  * It listens for the nextEvents with Actions, Timers and containedReactors. Sorts them and forwards to super ClockKeeeper
  * It also accepts logicalTime from superClockKeeper and passes it on the subcomponents.
  * When the time is advanced it moves into execute stage until all sub-components are non-busy
+ * It expects a "waitForFinish" input which goes high when all reactions have finished executing
  */
 class ClockKeeper(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends AbstractClockKeeper {
 
@@ -127,7 +128,7 @@ class ClockKeeper(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends Ab
       when (io.logicalTimeOut.fire) {
         regState := sBusy
       }
-      assert(io.logicalTimeOut.fire, "[ClockKeeper.scala] Entere sExec but sub-components not ready")
+      assert(io.logicalTimeOut.fire, "[ClockKeeper.scala] Enter sExec but sub-components not ready")
 
     }
     is (sBusy) {

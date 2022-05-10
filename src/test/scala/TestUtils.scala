@@ -5,9 +5,9 @@ import chisel3.experimental.BundleLiterals.AddBundleLiteralConstructor
 import chisel3.experimental.VecLiterals.AddVecLiteralConstructor
 import chisel3.util._
 import chiseltest._
-import org.scalatest.{FlatSpec, Matchers}
+import org.scalatest.flatspec.AnyFlatSpec
 
-class TestTreeSorter extends FlatSpec with ChiselScalatestTester with Matchers {
+class TestTreeSorter extends AnyFlatSpec with ChiselScalatestTester {
 
   def initClocks(implicit c: TreeSorter[_ <: Data]): Unit = {
     c.io.in.initSource().setSourceClock(c.clock)
