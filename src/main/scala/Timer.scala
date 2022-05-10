@@ -40,6 +40,7 @@ class Timer(c: TimerConfig)(implicit rc: ReactorGlobalParams) extends ReactorEle
           regState := sExecute
         }
         assert(!(io.logicalTime.bits > regNextEvent), "[Timer.scala] Received logical time greater than our current nextEvent")
+        assert(regFired === 0.U, "[Timer.scala] in sWait but regFired != 0")
       }
     }
 
@@ -51,6 +52,7 @@ class Timer(c: TimerConfig)(implicit rc: ReactorGlobalParams) extends ReactorEle
         when (regFired === (c.numAntiDependencies - 1).U) {
           regState := sWait
           regNextEvent := regNextEvent + c.interval.U
+          regFired := 0.U
         }
       }
     }

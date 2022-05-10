@@ -14,15 +14,7 @@ class TestReactionArbiter extends FlatSpec with ChiselScalatestTester with Match
   }
 
   def enableIn(implicit c: ReactionArbiter): Unit = {
-    c.io.enableIn.valid.poke(true.B)
-    fork
-      .withRegion(Monitor) {
-        while(!c.io.enableIn.ready.peekBoolean()) {
-          c.clock.step()
-        }
-        c.io.enableIn.ready.expect(true.B)
-      }
-      .joinAndStep(c.clock)
+    c.io.enableIn.enqueue(chiselTypeOf(c.io.enableIn.bits))
   }
 
   def enableOut(idx: Int, execTime: Int = 1)(implicit c: ReactionArbiter): Unit = {

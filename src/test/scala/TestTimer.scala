@@ -28,13 +28,7 @@ class TestTimer extends FlatSpec with ChiselScalatestTester with Matchers {
   }
 
   def outPort(implicit c: Timer): Unit = {
-    c.io.outPort.ready.poke(true.B)
-    fork
-      .withRegion(Monitor) {
-        c.io.outPort.waitForValid()
-        c.io.outPort.valid.expect(true.B)
-      }
-      .joinAndStep(c.clock)
+    c.io.outPort.expectDequeue(chiselTypeOf(c.io.outPort.bits))
   }
 
   implicit val rc = ReactorGlobalParams(numClkBits = 8)
@@ -76,4 +70,19 @@ class TestTimer extends FlatSpec with ChiselScalatestTester with Matchers {
       })
     }
   }
+
+  it should "Wrap correctly" in {
+      test(new Timer(config1)) { implicit c =>
+        initClocks
+        var time = 10
+        (1 to 50).foreach(_ => {
+          logicalTime(time)
+          (1 to config1.numAntiDependencies).foreach(_ => outPort)
+          time += config1.interval
+        })
+        time = 4
+        logicalTime(time)
+        (1 to config1.numAntiDependencies).foreach(_ => outPort)
+      }
+    }
 }

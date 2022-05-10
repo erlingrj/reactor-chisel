@@ -36,5 +36,12 @@ object TimeTag {
     tag.tag := init
     tag
   }
+
+  // Create a tag with max value (all ones)
+  def max()(implicit  rc: ReactorGlobalParams): TimeTag = {
+    val tag = Wire(new TimeTag())
+    tag.tag := ~TimeTag(0.U).tag
+    tag
+  }
 }
 

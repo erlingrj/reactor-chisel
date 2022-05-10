@@ -9,11 +9,20 @@ class TreeSorterIO[T <: Data](gen: T, n: Int) extends Bundle {
   val out = Decoupled(gen)
 
   def tieOff: Unit = {
+    in.ready := false.B
+    out.valid := false.B
+    out.bits := 0.U.asTypeOf(gen)
+  }
 
+  // Can be used by outer module which instantiates TreeSorter to drive "default" values
+  def tieOffExt: Unit = {
+    in.bits.map(_ := 0.U.asTypeOf(in.bits(0)))
+    in.valid := false.B
+    out.ready := false.B
   }
 }
 
-class TreeSorter[T <: Data](gen:T, n: Int) extends Module {
+class TreeSorter[T <: Data](gen:T, n: Int, min: Boolean = true) extends Module {
   val io = IO(new TreeSorterIO(gen, n))
   io.tieOff
 
@@ -21,7 +30,7 @@ class TreeSorter[T <: Data](gen:T, n: Int) extends Module {
   val regState = RegInit(sIdle)
 
   val regs = RegInit(VecInit(Seq.fill(n)(0.U.asTypeOf(gen).asUInt)))
-  val cnt = RegInit(0.U(log2Ceil(n)))
+  val cnt = RegInit(0.U(log2Ceil(n).W))
 
   switch(regState) {
     is (sIdle) {
@@ -35,10 +44,11 @@ class TreeSorter[T <: Data](gen:T, n: Int) extends Module {
 
     is (sSort) {
       for (i <- 0 until n/2) {
-        regs(i) := Mux(regs(i*2) > regs(i*2+1), regs(i*2), regs(i*2+1))
+        if (min) regs(i) := Mux(regs(i * 2) < regs(i * 2 + 1), regs(i * 2), regs(i * 2 + 1))
+        else regs(i) := Mux(regs(i * 2) > regs(i * 2 + 1), regs(i * 2), regs(i * 2 + 1))
       }
       cnt := cnt + 1.U
-      when (cnt === (n-1).U) {
+      when (cnt === log2Ceil(n).U) {
         regState := sDone
       }
 
