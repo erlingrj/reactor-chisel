@@ -30,27 +30,3 @@ object Signal {
 
 }
 
-
-class TaggedSignal[T <: Data](gen: T)(implicit rc: ReactorGlobalParams) extends Signal(gen) {
-  val tag: TimeTag = TimeTag()
-}
-
-
-object TaggedSignal {
-  def apply[T <: Data](gen: T)(implicit rc: ReactorGlobalParams): TaggedSignal[T] = {
-    val signal = new TaggedSignal(gen)
-    signal
-  }
-
-  def apply[T <: Data](gen:T, initVal: T, initTag: TimeTag)(implicit rc: ReactorGlobalParams): TaggedSignal[T] = {
-    val signal = Wire(new TaggedSignal(gen))
-    signal.tag := initTag
-    signal.value := initVal
-    signal
-  }
-}
-
-
-
-class EmptySignal extends BaseSignal {
-}
