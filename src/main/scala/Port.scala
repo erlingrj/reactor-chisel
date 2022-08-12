@@ -9,110 +9,75 @@ import chisel3.util._
  */
 
 
-
-class OutPortIO[T <: Data](c: ReactorOutputPortConfig[T])(implicit rc: ReactorGlobalParams) extends Bundle {
-  val write = Vec(c.numAntiDependencies, Flipped(Decoupled(Signal(c.gen))))
-  val push = Input(Bool())
-
-  val out = Decoupled(Signal(c.gen))
-  def tieOff() = {
-    out.valid := false.B
-    out.bits := 0.U.asTypeOf(Signal(c.gen))
-    write.map(_.ready := false.B)
-  }
+case class PortConfig(
+  nElems: Int,
+  nReaders: Int
+) {
+  def nAddrBits = log2Ceil(nElems)
 }
 
-class OutPort[T <: Data](c: ReactorOutputPortConfig[T])(implicit rc: ReactorGlobalParams) extends Module {
-  val io = IO(new OutPortIO(c))
-  io.tieOff()
-
-  val regBuf = RegInit(0.U.asTypeOf(Signal(c.gen)))
-  val regBufVal = RegInit(false.B)
-
-  val sRecv :: sSend :: Nil = Enum(2)
-
-  val regState = RegInit(sRecv)
-
-  switch(regState) {
-    is (sRecv) {
-
-      for (i <- 0 until c.numAntiDependencies) {
-        io.write(i).ready := true.B
-        when (io.write(i).fire) {
-          regBufVal := true.B
-          regBuf := io.write(i).bits
-        }
-      }
-      assert(io.write.count(_.fire) <= 1.U, "[Port.scala] Multiple write to PortOut in same clock cycle. Should be mutex")
-
-      when(io.push) {
-        regState := sSend
-      }
-    }
-
-    is (sSend) {
-      io.out.bits := regBuf
-      io.out.valid := regBufVal
-
-      when (io.out.fire) {
-        regState := sRecv
-        regBufVal := false.B
-      }
-    }
-  }
+class PortInIO[T <: Data](c: PortConfig, gen: T) extends Bundle {
+  val wen = Input(Bool())
+  val addr = Input(UInt(c.nAddrBits.W))
+  val data = Input(gen)
 }
 
 
-class InPortIO[T <: Data](c: ReactorInputPortConfig[T])(implicit rc: ReactorGlobalParams) extends Bundle {
-  val in = Flipped(Decoupled(Signal(c.gen)))
-  val read = Decoupled(Signal(c.gen))
+class PortOutIO[T <: Data](c: PortConfig, gen: T) extends Bundle {
+  val present = Output(Bool())
+  val addr = Input(UInt(c.nAddrBits.W))
+  val data = Output(gen)
+}
 
-  def tieOff() = {
-    in.ready := false.B
-    read.valid := false.B
-    read.bits := 0.U.asTypeOf(Signal(c.gen))
+class PortIO[T <: Data](c: PortConfig, gen: T) extends Bundle {
+  val in = new PortInIO(c,gen)
+  val outs = Vec(c.nReaders, new PortOutIO(c,gen))
+  val evalEnd = Input(Bool())
+}
+
+abstract class Port[T <: Data](c: PortConfig, gen: T) extends Module {
+  val io = IO(new PortIO(c,gen))
+
+  val regPresent = RegInit(false.B)
+  io.outs.map(_.present := regPresent)
+
+  // When something is written to the Port we should output the present signal
+  when(io.in.wen) {
+    regPresent := true.B
   }
+
+  // When we reach the end of an evaluation cycle. Scheduler will signal evalEnd to all Ports to reset present signal
+  when(io.evalEnd) {
+    regPresent := false.B
+  }
+
+  assert(!(io.in.wen && io.evalEnd), "[Port.scala] reaction tries to write to port while scheduler says eval end")
+  assert(!(io.in.wen && io.outs.map(_.addr =/= 0.U).reduce(_||_)), "Port.scala read and write to port at the same time")
 }
 
 
-class InPort[T <: Data](c: ReactorInputPortConfig[T])(implicit rc: ReactorGlobalParams) extends Module {
+class BramPort[T <: Data](c: PortConfig, gen:T) extends Port[T](c, gen) {
 
-  val io = IO(new InPortIO(c))
-  io.tieOff()
+}
 
-  val regBuf = RegInit(0.U.asTypeOf(Signal(c.gen)))
-  val regBufVal = RegInit(false.B)
+class DramPort[T <: Data](c: PortConfig, gen: T) extends Port[T](c, gen) {
 
+}
 
-  val sRecv :: sSend :: Nil = Enum(2)
-  val regState = RegInit(sRecv)
-  val regFired = RegInit(0.U(log2Ceil(c.numDependencies+1).W))
+class RegPort[T <: Data](c: PortConfig, gen: T) extends Port[T](c, gen) {
 
-  switch (regState) {
+  val data = RegInit(VecInit(Seq.fill(c.nElems)(0.U.asTypeOf(gen))))
+  val readBufs = RegInit(VecInit(Seq.fill(c.nReaders)(0.U.asTypeOf(gen))))
 
-    is (sRecv) {
-      io.in.ready := true.B
-      when (io.in.fire) {
-        regBuf := io.in.bits
-        regBufVal := true.B
-        regState := sSend
-      }
-    }
+  // Reading
+  io.outs zip readBufs map({ case (port, buf) => port.data := buf })
 
-    is (sSend) {
-      io.read.bits := regBuf
-      io.read.valid := true.B
+  for (readIdx <- 0 until c.nReaders) {
+    readBufs(readIdx) := data(io.outs(readIdx).addr)
+  }
 
-      when(io.read.fire) {
-        regFired := regFired + 1.U
-        when (regFired === (c.numDependencies-1).U) {
-          regBuf := 0.U.asTypeOf(Signal(c.gen))
-          regBufVal := false.B
-          regState := sRecv
-          regFired := 0.U
-        }
-
-      }
-    }
+  // Writing
+  when(io.in.wen) {
+    data(io.in.addr) := io.in.data
   }
 }
