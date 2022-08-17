@@ -2,6 +2,7 @@ package reactor
 
 import chisel3._
 import chisel3.util._
+import chisel3.experimental.DataMirror
 
 /**
  *  Ports are what connects Reactors to Reactor
@@ -13,25 +14,43 @@ case class PortConfig(
   nElems: Int,
   nReaders: Int
 ) {
-  def nAddrBits = log2Ceil(nElems)
+  def getPortIOConfig: PortIOConfig = PortIOConfig(nElems)
 }
 
-class PortInIO[T <: Data](c: PortConfig, gen: T) extends Bundle {
-  val wen = Input(Bool())
+case class PortIOConfig(
+  nElems: Int,
+) {
+  def nAddrBits: Int = log2Ceil(nElems)
+}
+// PortIn is a antiDependency
+class PortInIO[T <: Data](c: PortIOConfig, gen: T) extends Bundle {
+  val en = Input(Bool())
   val addr = Input(UInt(c.nAddrBits.W))
   val data = Input(gen)
+
+  def reactionTieOff: Unit = {
+    en := false.B
+    addr := 0.U
+    data := 0.U
+  }
 }
 
-
-class PortOutIO[T <: Data](c: PortConfig, gen: T) extends Bundle {
+// PortOut is a trigger/dependency
+class PortOutIO[T <: Data](c: PortIOConfig, gen: T) extends Bundle {
   val present = Output(Bool())
   val addr = Input(UInt(c.nAddrBits.W))
+  val en = Input(Bool())
   val data = Output(gen)
+
+  def reactionTieOff: Unit = {
+    addr := 0.U
+    en := false.B
+  }
 }
 
 class PortIO[T <: Data](c: PortConfig, gen: T) extends Bundle {
-  val in = new PortInIO(c,gen)
-  val outs = Vec(c.nReaders, new PortOutIO(c,gen))
+  val in = new PortInIO(c.getPortIOConfig,gen)
+  val outs = Vec(c.nReaders, new PortOutIO(c.getPortIOConfig,gen))
   val evalEnd = Input(Bool())
 }
 
@@ -42,7 +61,7 @@ abstract class Port[T <: Data](c: PortConfig, gen: T) extends Module {
   io.outs.map(_.present := regPresent)
 
   // When something is written to the Port we should output the present signal
-  when(io.in.wen) {
+  when(io.in.en) {
     regPresent := true.B
   }
 
@@ -51,8 +70,8 @@ abstract class Port[T <: Data](c: PortConfig, gen: T) extends Module {
     regPresent := false.B
   }
 
-  assert(!(io.in.wen && io.evalEnd), "[Port.scala] reaction tries to write to port while scheduler says eval end")
-  assert(!(io.in.wen && io.outs.map(_.addr =/= 0.U).reduce(_||_)), "Port.scala read and write to port at the same time")
+  assert(!(io.in.en && io.evalEnd), "[Port.scala] reaction tries to write to port while scheduler says eval end")
+  assert(!(io.in.en && io.outs.map(_.addr =/= 0.U).reduce(_||_)), "Port.scala read and write to port at the same time")
 }
 
 
@@ -73,11 +92,13 @@ class RegPort[T <: Data](c: PortConfig, gen: T) extends Port[T](c, gen) {
   io.outs zip readBufs map({ case (port, buf) => port.data := buf })
 
   for (readIdx <- 0 until c.nReaders) {
-    readBufs(readIdx) := data(io.outs(readIdx).addr)
+    when (io.outs(readIdx).en) {
+      readBufs(readIdx) := data(io.outs(readIdx).addr)
+    }
   }
 
   // Writing
-  when(io.in.wen) {
+  when(io.in.en) {
     data(io.in.addr) := io.in.data
   }
 }

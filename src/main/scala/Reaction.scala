@@ -2,75 +2,87 @@ package reactor
 
 import chisel3._
 import chisel3.util._
+import chisel3.experimental.DataMirror.directionOf
 
 
-abstract class ReactionIO (implicit rc: ReactorGlobalParams) extends Bundle {
+
+class ReactionCtrlIO (implicit rc: ReactorGlobalParams) extends Bundle {
   // Control signals
   val done = Output(Bool())
   val running = Output(Bool())
   val enable = Flipped(Decoupled())
 
-  def triggers: Vec[PortOutIO[_<:Data]]
-  def dependencies: Vec[PortOutIO[_<:Data]]
-  def antiDependencies: Vec[PortInIO[_<:Data]]
-
   def tieOff: Unit = {
-    done := false.B
-    running := false.B
-    enable.ready := false.B
+    if (directionOf(done) == ActualDirection.Output) {
+      done := false.B
+      running := false.B
+      enable.ready := false.B
+    } else
+    {
+      enable.valid := false.B
+    }
   }
 }
 
-
 abstract class Reaction(implicit rc: ReactorGlobalParams) extends Module {
-  val io: ReactionIO
-  io.tieOff
+  val ioCtrl = IO(new ReactionCtrlIO())
+  ioCtrl.tieOff
 
-  def reaction: Bool
+  val triggers: Seq[PortOutIO[UInt]]
+  val dependencies: Seq[PortOutIO[UInt]]
+  val antiDependencies: Seq[PortInIO[UInt]]
+
+  // Reset signal to reset all Registers in the reactionBody
+  val reactionEnable = Wire(Bool())
+  reactionEnable := false.B
+  val reactionDone = Wire(Bool())
+  reactionDone := false.B
+
+  def reactionBody: Unit
 
   val sIdle :: sRunning :: sDone :: Nil = Enum(3)
   val regState = RegInit(sIdle)
 
-  val regPresent = if (rc.devel) Some(RegInit(VecInit(Seq.fill(io.triggers.length)(false.B)))) else None
+  def reactionPrelude: Unit = {
+    triggers.map(_.reactionTieOff)
+    dependencies.map(_.reactionTieOff)
+    antiDependencies.map(_.reactionTieOff)
+  }
 
-  switch(regState) {
+  // The reactionMain is the "mainLoop" of the Reaction. To avoid some quirks in Chisel'
+  //  this is wrapped in a function and called from the child class
+  def reactionMain: Unit = {
+    switch(regState) {
 
-    is(sIdle) {
-      io.running := false.B
-      io.done := false.B
+      is(sIdle) {
+        ioCtrl.running := false.B
+        ioCtrl.done := false.B
 
-      when(io.enable.valid) {
-        when(io.triggers.map(_.present).reduce(_ || _)) {
-          (regPresent.get zip io.triggers).map(f => f._1 := f._2.present)
+        when(ioCtrl.enable.valid) {
           regState := sRunning
-          io.enable.ready := true.B
+          ioCtrl.enable.ready := true.B
         }
       }
-    }
 
-    is(sRunning) {
-      io.running := true.B
-      io.done := false.B
+      is(sRunning) {
+        ioCtrl.running := true.B
+        ioCtrl.done := false.B
+        reactionEnable := true.B
 
-      val done = reaction
+        withReset(!reactionEnable) {
+          reactionBody
+        }
 
-      when(done) {
-        regState := sDone
+        when(reactionDone) {
+          regState := sDone
+        }
       }
 
-      // Verify that we don't get new triggers WHILE we are executing. SHould start execution at consistent logical time
-      //  new triggers should not arrive after this
-      if (rc.devel) {
-        (regPresent.get zip io.triggers).map(f => assert(f._1 === f._2.present, "[Reaction.scala] A new trigger signal appeared after execution of Reaction had started"))
+      is(sDone) {
+        ioCtrl.done := true.B
+        ioCtrl.running := true.B
+        regState := sIdle
       }
-
-    }
-
-    is(sDone) {
-      io.done := true.B
-      io.running := false.B
-      regState := sIdle
-      if (rc.devel) regPresent.get.map(_ := false.B)
     }
   }
 }

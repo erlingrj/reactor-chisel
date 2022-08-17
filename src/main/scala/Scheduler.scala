@@ -2,206 +2,138 @@ package reactor
 
 import chisel3._
 import chisel3.util._
-import scala.collection.mutable.ListBuffer
-/*
+import chisel3.experimental.VecLiterals._
+// An implementation of the Synchronous MoC Scheduler
 
-abstract class AbstractScheduler extends Module
+case class SchedulerConfig(
+  schedule: Seq[Seq[Int]] = Seq(Seq(0)),
+) {
 
-class SchedulerIO(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends Bundle {
+  def schedLen = schedule.length
+  def nReactions: Int = schedule.flatten.max + 1
 
+  def schedLenBits: Int = {
+    if (schedLen == 1) 1
+    else log2Ceil(schedLen)
+  }
+  def reactionBits: Int = log2Ceil(nReactions)
 
-  val execute = Flipped(Decoupled())
-  val arbiterEn = Decoupled()
-  val reactorsEn = Vec(c.reactors.length, Decoupled())
-  val clockKeeperStart = Decoupled()
+  def schedBits: Seq[Int] = {
+    Seq.tabulate(schedLen)(i =>
+      {
+        var sched = 0
+        for (j <- 0 until nReactions) {
+          if (schedule(i).contains(j)) {
+            sched = sched | (1 << j)
+          }
+        }
+        sched
+      })
+    }
 
+  def checkConfig() = {
 
-  def tieOff(): Unit = {
-    execute.ready := false.B
-    arbiterEn.valid := false.B
-    reactorsEn.map(_.valid := false.B)
-    clockKeeperStart.valid := false.B
+  }
+
+  require(schedule.length > 0)
+  for (i <- 0 until nReactions) {
+    val n = schedule.flatten.count(_ == i)
+    require(n == 1, s"[Scheduler.scala] Illegal schedule contains $n occurrences of reaction $i")
+  }
+
+  println(s"Schedule length=$schedLen\nSchedule bits=$schedLenBits\nScheduleBits=$schedBits")
+}
+
+class SchedulerCtrlIO extends Bundle {
+  val start = Flipped(Decoupled())
+  val running = Output(Bool())
+  val done = Output(Bool())
+
+  def tieOff = {
+    start.ready := false.B
+    running := false.B
+    done := false.B
   }
 }
 
-/**
- *
- * Scheduler is in charge of enabling the arbiter and also contained Reactors
- * It is linked to the ClockKeeper but for now separated in different Modules
- *  IO:
- *    - execute: Input from superReactor to trigger the execution in this reactor. This happens after
- *    - arbiterEn: Output to the Arbiter which tells it to start enabling the Reactions in the Reactor
- *    - reactorsEn: Output to each contained Reactor (this goes to that Reactor's scheduler)
- *    - clockKeeperStart: Output to the ClockKeeper in this Reactor to inform it that it can start sorting
- *
- */
-class Scheduler(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends Module {
-  val io = IO(new SchedulerIO(c))
-  io.tieOff()
+class Scheduler(val c: SchedulerConfig)(implicit rc: ReactorGlobalParams) extends Module {
+  val ioSchedulerCtrl = IO(new SchedulerCtrlIO())
+  val ioReactionCtrl = IO(Vec(c.nReactions, Flipped(new ReactionCtrlIO())))
 
-  val levels = c.getNumReactorLevels()
+  ioSchedulerCtrl.tieOff
+  ioReactionCtrl.map(_.tieOff)
 
-  val execSchedule = if(levels > 0) Some(Module(new ExecutionSchedule(c))) else None
+  // Extract schedule from config. Turn it into a more convenient rep. E.g.
+  // c.schedule = ( (1,3), (2,4) )
+  // schedule  = ( (1,0,1,0), (0,1,0,1) )
+  val schedule = VecInit(c.schedBits.map(_.U))
 
-  val sIdle :: sExec :: sBlock :: sSync :: sWaitForSched :: Nil = Enum(5)
-  val regStateArb = RegInit(sIdle)
-  val regStateReactors = RegInit(sIdle)
-  io.execute.ready := (regStateArb === sIdle) && (regStateReactors === sIdle)
+  // Idx for counting each step of the schedule
+  val regSchedStepIdx = RegInit(0.U(c.schedLenBits.W))
 
-  switch(regStateArb) {
+  // Keeping track of which Reactions are done in each step of the schedule
+  val regReactionsRunning = RegInit(VecInit(Seq.fill(c.nReactions)(false.B)))
+
+  val sIdle :: sRunning :: sDone :: Nil = Enum(3)
+  val regStateMain = RegInit(sIdle)
+  val regStateSchedStep = RegInit(sIdle)
+
+  switch(regStateMain) {
     is (sIdle) {
-      when (io.execute.fire) {
-        regStateArb := sExec
+      ioSchedulerCtrl.start.ready := true.B
+      when (ioSchedulerCtrl.start.fire) {
+        regStateMain := sRunning
+        regReactionsRunning.map(_ := false.B)
       }
     }
+    is (sRunning) {
+      ioSchedulerCtrl.running := true.B
 
-    is (sExec) {
-      io.arbiterEn.valid := true.B
-      when(io.arbiterEn.fire) {
-          regStateArb := sBlock
+      switch(regStateSchedStep) {
+        is (sIdle) {
+          // Start the reactions on the current step
+          val currSched = schedule(regSchedStepIdx)
+          for (i <- 0 until c.nReactions) {
+            ioReactionCtrl(i).enable.valid := currSched(i)
+            assert(!(currSched(i) && !ioReactionCtrl(i).enable.fire), "[Scheduler.scala] Reaction was enabled but did not fire")
+
+            regReactionsRunning(i) := currSched(i)
+          }
+          regStateSchedStep := sRunning
         }
-      }
-    is (sBlock) {
-      when (io.arbiterEn.ready) {
-        // If we have sub-reactors go to sync state to sync with the sub-reactor execution
-        if (levels > 0) {
-          regStateArb := sSync
-        } else {
-          regStateArb := sWaitForSched
-        }
-      }
-    }
 
-    is (sSync) {
-      when (regStateReactors === sSync) {
-        regStateArb := sWaitForSched
-      }
-    }
-
-    is (sWaitForSched) {
-      io.clockKeeperStart.valid := true.B
-      when (io.clockKeeperStart.fire) {
-        regStateArb := sIdle
-      }
-    }
-  }
-
-  if (levels > 0) {
-    val sched = execSchedule.get.io
-    sched.tieOffExt()
-
-    val regSchedule = RegInit(VecInit(Seq.fill(c.reactors.length)(false.B)))
-    val regScheduleLast = RegInit(false.B)
-
-
-    switch(regStateReactors) {
-      is (sIdle) {
-        when (io.execute.fire) {
-          regStateReactors := sExec
-        }
-      }
-
-      is (sExec) {
-        sched.enabled.ready := true.B
-        when(sched.enabled.fire) {
-          for (i <- 0 until c.reactors.length) {
-            when (sched.enabled.bits(i)) {
-              io.reactorsEn(i).valid := true.B
-              assert(io.reactorsEn(i).fire, s"[Scheduler.scala] Sub-reactor $i enabled but not ready")
+        is (sRunning) {
+          // Check if any reaction finished this step
+          for (i <- 0 until c.nReactions) {
+            when (ioReactionCtrl(i).done) {
+              assert (regReactionsRunning(i), "[Scheduler.scala] reaction done, but was not marked as running")
+              regReactionsRunning(i) := false.B
             }
           }
-          assert(sched.enabled.bits.reduce(_||_), "[Scheduler.scala] Scheduler dequeued empty schedule")
 
-          regSchedule zip sched.enabled.bits map {f => f._1 := f._2}
-          regScheduleLast := sched.last
-
-          regStateReactors := sBlock
-        }
-      }
-
-      is (sBlock) {
-        for (i <- 0 until c.reactors.length) {
-          when (regSchedule(i) && io.reactorsEn(i).ready) {
-            regSchedule(i) := false.B
+          // Check if all reactions are done
+          when (!regReactionsRunning.reduce(_||_)) {
+            regStateSchedStep := sDone
           }
         }
 
-        when (regSchedule.reduce(_||_) === false.B) {
-          when (regScheduleLast) {
-            regStateReactors := sSync
-          }.otherwise {
-            regStateReactors := sExec
+        is (sDone) {
+          // Progress to the next step
+          regStateSchedStep := sIdle
+          when (regSchedStepIdx === (c.schedLen-1).U) {
+            regStateMain := sDone
+          } otherwise {
+            regSchedStepIdx := regSchedStepIdx + 1.U
           }
-        }
-      }
-
-      is (sSync) {
-        when (regStateArb === sSync) {
-          regStateReactors := sWaitForSched
-        }
-      }
-
-      is (sWaitForSched) {
-        when (io.clockKeeperStart.fire) {
-          regStateReactors := sIdle
         }
       }
     }
 
-  }
-}
-
-class ExecutionScheduleIO(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends Bundle {
-  val enabled = Decoupled(Vec(c.numReactions, Bool()))
-  val last = Output(Bool())
-
-  def tieOff(): Unit = {
-    enabled.valid := false.B
-    enabled.bits.map(_:=false.B)
-    last := false.B
-  }
-
-  def tieOffExt(): Unit = {
-    enabled.ready := false.B
-  }
-}
-
-class ExecutionSchedule(c: ReactorConfig)(implicit rc: ReactorGlobalParams) extends Module {
-  // Find number of levels:
-  val levels = c.getNumReactorLevels()
-  val _reactionLevels = ListBuffer[Seq[Int]]()
-  require(levels > 0, "[Secheduler.scala] ExecSchedule instantiated but there are no sub-reactors")
-
-  println(s"ExecutionSchedule with ${levels} levels")
-  for (l <- 0 until levels) {
-    _reactionLevels.append(c.getReactorIndicesOnLevel(l))
-  }
-  val reactionLevels = _reactionLevels.toSeq
-  println(s"ExecutionSchedule for Reactor `${c.id}` is $reactionLevels")
-
-  val io = IO(new ExecutionScheduleIO(c))
-  io.tieOff()
-
-  val regSchedule = RegInit(
-    VecInit(
-      Seq.tabulate(levels)(i => VecInit(
-        Seq.tabulate(c.numReactions)(j => reactionLevels(i).contains(j).B)
-      ))
-    )
-  )
-
-  val regCount = RegInit(0.U(log2Ceil(levels).W))
-
-  io.last := regCount === (levels-1).U
-  io.enabled.valid := true.B
-  (io.enabled.bits zip regSchedule(regCount)).map(f => f._1 := f._2)
-
-  when (io.enabled.fire) {
-    regCount := regCount + 1.U
-    when (regCount === (levels-1).U) {
-      regCount := 0.U
+    is (sDone) {
+      ioSchedulerCtrl.running := true.B
+      ioSchedulerCtrl.done := true.B
+      regStateMain := sIdle
+      regSchedStepIdx := 0.U
     }
   }
 }
-
- */
