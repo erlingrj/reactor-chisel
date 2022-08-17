@@ -4,10 +4,11 @@ import chisel3._
 import chisel3.util._
 import chiseltest._
 import org.scalatest._
+import org.scalatest.flatspec.AnyFlatSpec
 
 
 
-class TestScheduler extends FlatSpec with ChiselScalatestTester with Matchers {
+class TestScheduler extends AnyFlatSpec with ChiselScalatestTester  {
 
   def initClocks(c: Scheduler): Unit = {
     c.ioSchedulerCtrl.start.initSource().setSourceClock(c.clock)

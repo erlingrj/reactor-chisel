@@ -7,11 +7,9 @@ import chisel3.experimental.DataMirror
 import fpgatidbits.PlatformWrapper._
 
 
+trait ReactorBaseIO extends Module {
 
-abstract class ReactorBase(p: PlatformWrapperParams)(implicit val rp: ReactorGlobalParams) extends GenericAccelerator(p) {
-  val numMemPorts = 1
-
-  val io = IO(new GenericAcceleratorIF(numMemPorts, p) {
+  val ioUsr = IO(new Bundle  {
     val start = Input(Bool())
     val baseAddr = Input(Bool())
     val baseAddrRes = Input(Bool())
@@ -20,14 +18,15 @@ abstract class ReactorBase(p: PlatformWrapperParams)(implicit val rp: ReactorGlo
     val cycles = Output(UInt(32.W))
     val currReaction = Output(UInt(8.W))
   })
-  io.signature := makeDefaultSignature()
 
-  val scheduler: Scheduler
-  val reactions: Seq[Reaction]
-  val ports:Seq[Port[_<:Data]]
 
 }
+abstract class ReactorBase(p: PlatformWrapperParams)(implicit val rp: ReactorGlobalParams)
+  extends GenericAccelerator(p) with ReactorBaseIO {
 
-class TestReactor(p: PlatformWrapperParams)(implicit val rp: ReactorGlobalParams) extends ReactorBase(p) {
+  val numMemPorts = 1
+  val ioMem = IO(new GenericAcceleratorMemIO(numMemPorts, p))
+  val ioGen = IO(new GenericAcceleratorCSRIO(p))
+  ioGen.signature := makeDefaultSignature()
 
 }

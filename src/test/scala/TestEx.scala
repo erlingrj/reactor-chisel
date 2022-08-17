@@ -5,6 +5,7 @@ import org.scalatest._
 import chiseltest._
 import chisel3.experimental.BundleLiterals._
 import chisel3.util._
+import org.scalatest.flatspec.AnyFlatSpec
 
 class ExampleIO[T<: Data](gen: T) extends Bundle {
   val data = Input(gen)
@@ -18,7 +19,7 @@ class Example extends AbstractExample {
   override val io = IO(new ExampleIO(UInt(8.W)))
 }
 
-class TestEx extends FlatSpec with ChiselScalatestTester with Matchers {
+class TestEx extends AnyFlatSpec with ChiselScalatestTester {
 
   def pokeAbstract(c: AbstractExample): Unit = {
   //  c.io.data.poke(2.U.asTypeOf(c.io.data))

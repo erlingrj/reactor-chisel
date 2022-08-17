@@ -5,6 +5,5 @@ import chisel3.experimental.BundleLiterals.AddBundleLiteralConstructor
 import chisel3.experimental.VecLiterals.AddVecLiteralConstructor
 import chisel3.util._
 import chiseltest._
-import org.scalatest.flatspec.AnyFlatSpec
 
 class MockPort

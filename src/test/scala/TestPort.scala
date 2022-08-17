@@ -5,8 +5,9 @@ import org.scalatest._
 import chiseltest._
 import chisel3.experimental.BundleLiterals._
 import chisel3.util.Valid
+import org.scalatest.flatspec.AnyFlatSpec
 
-class TestRegPort extends FlatSpec with ChiselScalatestTester with Matchers {
+class TestRegPort extends AnyFlatSpec with ChiselScalatestTester {
 
   behavior of "TestRegPort"
 
