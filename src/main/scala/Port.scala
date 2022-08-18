@@ -20,7 +20,7 @@ case class PortConfig(
 case class PortIOConfig(
   nElems: Int,
 ) {
-  def nAddrBits: Int = log2Ceil(nElems)
+  def nAddrBits: Int = if (nElems > 1) log2Ceil(nElems) else 1
 }
 // PortIn is a antiDependency
 class PortInIO[T <: Data](c: PortIOConfig, gen: T) extends Bundle {
@@ -31,7 +31,7 @@ class PortInIO[T <: Data](c: PortIOConfig, gen: T) extends Bundle {
   def reactionTieOff: Unit = {
     en := false.B
     addr := 0.U
-    data := 0.U
+   data := 0.U
   }
 }
 
@@ -123,7 +123,7 @@ class PortStreamReader[T <: Data](c: PortIOConfig, gen: T) extends Module {
   val io = IO(new PortStreamReaderIO(c,gen))
   io.tieOff()
 
-  val regCnt = RegInit(0.U(c.nAddrBits.W))
+  val regCnt = RegInit(0.U((c.nAddrBits+1).W))
   val regRspValid = RegInit(false.B)
   val wReadEn = WireInit(false.B)
   wReadEn := false.B
@@ -132,7 +132,7 @@ class PortStreamReader[T <: Data](c: PortIOConfig, gen: T) extends Module {
 
   val sIdle :: sRunning :: sDone :: Nil = Enum(3)
   val queueSize = 4
-  val queue = Module(new Queue(gen, queueSize))
+  val queue = Module(new Queue(gen, queueSize, useSyncReadMem = true))
   queue.io.deq <> io.out
   queue.io.enq.bits := io.portRead.data
   queue.io.enq.valid := regRspValid
@@ -150,7 +150,7 @@ class PortStreamReader[T <: Data](c: PortIOConfig, gen: T) extends Module {
     }
 
     is (sRunning) {
-      when(regCnt === c.nElems.U) {
+      when(regCnt === (c.nElems).U) {
         regState := sDone
         assert(queue.io.enq.fire, "[Port.scala] PortStreamReader should have enqueued last value")
       } otherwise {
