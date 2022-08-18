@@ -1,19 +1,10 @@
-A HW Reactor framework in Chisel
+A Reactor implementation in Chisel3
 =======================
 
+This repo contains the work-in-progress of implementing Reactors in Chisel3.
+Reactors are a model of computation (MoC) developed for designing concurrent cyber-physical system.
+It has many similarities with the Discrete-Time MoC underlying HDLs such as VHDL, Verilog and SystemC.
+Two synthesizable subsets of the Reactor MoC are identified and implemented here.
 
-## Architecture
-
-### Scheduler
-
-### HWReactor
-- Top level entity which communicates with SW through a register file and shared memory
-- The memory ports are forwarded to Reactions communicating directly to its ports somehow and accesses to DRAM is done at the "right" address
-- All the Reactions, Ports and Connections are instantiated by user (code generator) within the HWReactor
-
-
-### Reactions
-
-### Ports
-
-### Connec
+reactor-chisel is intended as a target for doing HW/SW codesign in the Lingua Franca framework. 
+For more information on Reactors and Lingua Franca visit: www.lf-lang.org
