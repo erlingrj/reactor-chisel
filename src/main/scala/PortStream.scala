@@ -2,6 +2,8 @@ package reactor
 
 import chisel3._
 import chisel3.util._
+import chisel3.experimental.{DataMirror, Direction}
+
 
 class PortStreamReaderIO[T <: Data](c: PortIOConfig, gen: T) extends Bundle {
   val portRead = Flipped(new PortOutIO(c,gen))
@@ -11,12 +13,16 @@ class PortStreamReaderIO[T <: Data](c: PortIOConfig, gen: T) extends Bundle {
   val out = Decoupled(gen)
 
   def tieOff(): Unit = {
-    portRead.addr := 0.U
-    portRead.en := false.B
-    start.ready := false.B
-    done := false.B
+      portRead.addr := 0.U
+      portRead.en := false.B
+      start.ready := false.B
+      done := false.B
     out.valid := false.B
     out.bits := 0.U.asTypeOf(gen)
+    }
+  def tieOffExt(): Unit = {
+    start.valid := false.B
+    out.ready := false.B
   }
 }
 class PortStreamReader[T <: Data](c: PortIOConfig, gen: T) extends Module {
@@ -79,13 +85,19 @@ class PortStreamWriterIO[T <: Data](c: PortIOConfig, gen: T) extends Bundle {
   val in = Flipped(Decoupled(gen))
   val portWrite = Flipped(new PortInIO(c,gen))
   val done = Output(Bool())
+  val active = Output(Bool())
 
   def tieOff(): Unit = {
-    in.ready := false.B
-    portWrite.addr := 0.U
-    portWrite.en := false.B
-    portWrite.data := 0.U
-    done := false.B
+      in.ready := false.B
+      portWrite.addr := 0.U
+      portWrite.en := false.B
+      portWrite.data := 0.U
+      done := false.B
+      active := false.B
+    }
+  def tieOffExt(): Unit = {
+    in.valid := false.B
+    in.bits := 0.U.asTypeOf(in.bits)
   }
 }
 class PortStreamWriter[T <: Data](c: PortIOConfig, gen: T) extends Module {
@@ -96,6 +108,7 @@ class PortStreamWriter[T <: Data](c: PortIOConfig, gen: T) extends Module {
   val regDone = RegInit(false.B)
   regDone := false.B
   io.done := regDone
+  io.active := (regCnt > 0.U)
 
   // Pipe the input data to reduce combinatorial paths
   io.in.ready := true.B

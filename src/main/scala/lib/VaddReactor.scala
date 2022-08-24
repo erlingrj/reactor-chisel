@@ -10,73 +10,54 @@ class VaddReactor(p: PlatformWrapperParams)(implicit rp: ReactorGlobalParams) ex
 
   // Schduler
   val schedulerConfig = SchedulerConfig(
-    Seq(Seq(0,1), Seq(2))
+    Seq(Seq(0))
   )
   val scheduler = Module(new Scheduler(schedulerConfig))
+  scheduler.ioSchedulerCtrl.tieOffExt
+  val numIn = 10
+  val numOut = 5
 
+  def inByteCount =  numIn * 8
+  def outByteCount = numOut * 8
 
-  val addLen=10
 
   // Reactions
-  val r0 = Module(new VaddReaction(addLen))
-  val r1 = Module(new VaddReaction(addLen))
-  val r2 = Module(new VaddReaction(addLen))
+  val r1 = Module(new VaddStreamReaction(numIn))
+
 
   // Ports
-
-  // Top->r0_in1
-  val p_top_r0_in1_gen = UInt(8.W)
-  val p_top_r0_in1_config = PortConfig(addLen,1)
-  val p_top_r0_in1 = Module(new RegPort(p_top_r0_in1_config, p_top_r0_in1_gen))
-
-  // Top->r0_in2
-  val p_top_r0_in2_gen = UInt(8.W)
-  val p_top_r0_in2_config = PortConfig(addLen,1)
-  val p_top_r0_in2 = Module(new RegPort(p_top_r0_in2_config, p_top_r0_in2_gen))
-
-  // Top->r0_in1
-  val p_top_r1_in1_gen = UInt(8.W)
-  val p_top_r1_in1_config = PortConfig(addLen,1)
-  val p_top_r1_in1 = Module(new RegPort(p_top_r1_in1_config, p_top_r1_in1_gen))
-
-  // Top->r0_in2
-  val p_top_r1_in2_gen = UInt(8.W)
-  val p_top_r1_in2_config = PortConfig(addLen,1)
-  val p_top_r1_in2 = Module(new RegPort(p_top_r1_in2_config, p_top_r1_in2_gen))
-
-  // r0_out1->r2_in1
-  val p_r0_out1_r2_in1_gen = UInt(8.W)
-  val p_r0_out1_r2_in1_config = PortConfig(addLen,1)
-  val p_r0_out1_r2_in1 = Module(new RegPort(p_r0_out1_r2_in1_config, p_r0_out1_r2_in1_gen))
+  // Top->r1_in
+  val p_top_r1_in_gen = UInt(8.W)
+  val p_top_r1_in_config = PortConfig(numIn,1)
+  val p_top_r1_in = Module(new RegPort(p_top_r1_in_config, p_top_r1_in_gen))
 
   // r1_out1->r2_in2
-  val p_r1_out1_r2_in2_gen = UInt(8.W)
-  val p_r1_out1_r2_in2_config = PortConfig(addLen,1)
-  val p_r1_out1_r2_in2 = Module(new RegPort(p_r1_out1_r2_in2_config, p_r1_out1_r2_in2_gen))
+  val p_r1_out_top_gen = UInt(8.W)
+  val p_r1_out_top_config = PortConfig(numOut,1)
+  val p_r1_out_top = Module(new RegPort(p_r1_out_top_config, p_r1_out_top_gen))
 
   // Connections
   // Ports
-  p_top_r0_in1.io.outs(0) <> r0.in1
-  p_top_r0_in2.io.outs(0) <> r0.in2
+  p_top_r1_in.io.outs(0) <> r1.in
+  p_r1_out_top.io.in <> r1.out
 
-  p_top_r1_in1.io.outs(0) <> r1.in1
-  p_top_r1_in2.io.outs(0) <> r1.in2
 
-  r0.out1 <> p_r0_out1_r2_in1.io.in
-  r1.out1 <> p_r1_out1_r2_in2.io.in
-
-  p_r0_out1_r2_in1.io.outs(0) <> r2.in1
-  p_r1_out1_r2_in2.io.outs(0) <> r2.in2
+  val ports = Seq(p_top_r1_in, p_r1_out_top)
 
   // Scheduler
-  scheduler.ioReactionCtrl(0) <> r0.ioCtrl
-  scheduler.ioReactionCtrl(1) <> r1.ioCtrl
-  scheduler.ioReactionCtrl(2) <> r2.ioCtrl
+  scheduler.ioReactionCtrl(0) <> r1.ioCtrl
 
-  // Memory Reader
+  // DMA
+  val dmaConfig = ReactorDMAConfig(
+    nElemsIn = numIn, nElemsOut = numOut, mrp = p.toMemReqParams()
+  )
 
-  // Memory Writer
+  val dma = Module(new ReactorDMA(dmaConfig, p_top_r1_in_gen, p_r1_out_top_gen))
+  dma.io.tieOffExt
+  dma.io.portRead <> p_r1_out_top.io.outs(0)
+  dma.io.portWrite <> p_top_r1_in.io.in
+  dma.io.memPort <> ioMem.memPort(0)
 
-  // Top-level state machine
-
+  connectScheduler2Ports
+  reactorMain
 }

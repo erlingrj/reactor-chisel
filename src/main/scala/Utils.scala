@@ -6,5 +6,5 @@ import chisel3.experimental.ChiselEnum
 
 
 object ReactorFault extends ChiselEnum {
-  val ReactionTimeout, MemoryFault = Value
+  val None, ReactionTimeout, MemoryFault = Value
 }

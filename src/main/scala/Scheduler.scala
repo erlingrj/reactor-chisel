@@ -3,6 +3,8 @@ package reactor
 import chisel3._
 import chisel3.util._
 import chisel3.experimental.VecLiterals._
+import chisel3.experimental.{DataMirror, Direction}
+
 // An implementation of the Synchronous MoC Scheduler
 
 case class SchedulerConfig(
@@ -50,10 +52,14 @@ class SchedulerCtrlIO extends Bundle {
   val done = Output(Bool())
 
   def tieOff = {
-    start.ready := false.B
-    running := false.B
-    done := false.B
+      start.ready := false.B
+      running := false.B
+      done := false.B
+    }
+  def tieOffExt = {
+    start.valid := false.B
   }
+
 }
 
 class Scheduler(val c: SchedulerConfig)(implicit rc: ReactorGlobalParams) extends Module {

@@ -38,10 +38,12 @@ abstract class Reaction(implicit rc: ReactorGlobalParams) extends Module {
   val reactionDone = Wire(Bool())
   reactionDone := false.B
 
+  // TODO: Should probably abort reaction execution if it exceeds some amount to catch mistakes
   def reactionBody: Unit
 
   val sIdle :: sRunning :: sDone :: Nil = Enum(3)
-  val regState = RegInit(sIdle)
+  val regStateTop = RegInit(sIdle)
+  val regCycles = RegInit(0.U(16.W))
 
   def reactionPrelude: Unit = {
     triggers.map(_.reactionTieOff)
@@ -52,19 +54,22 @@ abstract class Reaction(implicit rc: ReactorGlobalParams) extends Module {
   // The reactionMain is the "mainLoop" of the Reaction. To avoid some quirks in Chisel'
   //  this is wrapped in a function and called from the child class
   def reactionMain: Unit = {
-    switch(regState) {
+    switch(regStateTop) {
 
       is(sIdle) {
         ioCtrl.running := false.B
         ioCtrl.done := false.B
+        regCycles := 0.U
 
         when(ioCtrl.enable.valid) {
-          regState := sRunning
+          // TODO: Should check wether there are data in the port
+          regStateTop := sRunning
           ioCtrl.enable.ready := true.B
         }
       }
 
       is(sRunning) {
+        regCycles := regCycles + 1.U
         ioCtrl.running := true.B
         ioCtrl.done := false.B
         reactionEnable := true.B
@@ -74,15 +79,17 @@ abstract class Reaction(implicit rc: ReactorGlobalParams) extends Module {
         }
 
         when(reactionDone) {
-          regState := sDone
+          regStateTop := sDone
         }
       }
 
       is(sDone) {
         ioCtrl.done := true.B
         ioCtrl.running := true.B
-        regState := sIdle
+        regStateTop := sIdle
       }
     }
   }
+
+  assert(!(regCycles > 200.U), "[Reaction] Reaction was running for over 200cc assumed error")
 }

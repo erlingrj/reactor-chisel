@@ -8,7 +8,34 @@ import chisel3.util.Valid
 import org.scalatest.flatspec.AnyFlatSpec
 
 
+object TestPortAccess {
+  def expRead(c: PortOutIO[UInt], clk: Clock, vals: Seq[Int]): Unit = {
+    var addr = 0
+    for (v <- vals) {
+      while(!c.en.peekBoolean()) {
+        clk.step()
+      }
+      c.addr.expect(addr.U)
+      clk.step()
+      c.data.poke(v.U)
+      addr += 1
+    }
+    clk.step()
+  }
 
+  def expWrite(c: PortInIO[UInt], clk: Clock, eVals: Seq[Int]): Unit = {
+      var addr = 0
+      for (v <- eVals) {
+        while (!c.en.peekBoolean()) {
+          clk.step()
+        }
+        c.addr.expect(addr.U)
+        c.data.expect(v.U)
+        addr += 1
+        clk.step()
+      }
+    }
+}
 class TestRegPort extends AnyFlatSpec with ChiselScalatestTester {
 
   behavior of "TestRegPort"
