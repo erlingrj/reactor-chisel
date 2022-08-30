@@ -57,16 +57,16 @@ class TestRegPort extends AnyFlatSpec with ChiselScalatestTester {
     c.io.outs(idx).data.expect(expect.U)
   }
 
-  val c = PortConfig(nElems = 4, nReaders = 2)
+  val c = PortConfig(nElems = 4, nReaders = 2, gen = UInt(8.W))
 
   it should "initialize" in {
-    test(new RegPort(c, UInt(8.W))) {c =>
+    test(new RegPort(c)) {c =>
       c.io.outs.map(_.present.expect(false.B))
     }
   }
 
   it should "read and write" in {
-    test(new RegPort(c, UInt(8.W))) { c =>
+    test(new RegPort(c)) { c =>
       write(c, 1,2)
       c.io.outs.map(_.present.expect(true.B))
       read(c,0,1,2)

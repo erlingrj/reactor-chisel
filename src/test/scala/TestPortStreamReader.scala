@@ -38,12 +38,12 @@ class TestPortStreamReader extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   val gen = UInt(8.W)
-  val c = PortIOConfig(nElems = 4)
+  val c = PortIOConfig(nElems = 4, gen = gen)
 
   behavior of "PortStreamReader"
 
   it should "initialize" in {
-    test(new PortStreamReader(c,gen)) {c =>
+    test(new PortStreamReader(c)) {c =>
       initClocks(c)
       c.io.start.ready.expect(true.B)
       c.io.portRead.en.expect(false.B)
@@ -52,7 +52,7 @@ class TestPortStreamReader extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   it should "read and be done" in {
-    test(new PortStreamReader(c, gen)) { c =>
+    test(new PortStreamReader(c)) { c =>
       initClocks(c)
       start(c)
       val vals = Seq(1,2,3,4)
@@ -68,9 +68,9 @@ class TestPortStreamReader extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 
-  val c2 = PortIOConfig(nElems = 1)
+  val c2 = PortIOConfig(nElems = 1, gen=gen)
   it should "single entry" in {
-    test(new PortStreamReader(c2, gen)) { c =>
+    test(new PortStreamReader(c2)) { c =>
       initClocks(c)
       start(c)
       val vals = Seq(9)
@@ -86,7 +86,7 @@ class TestPortStreamReader extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
   it should "read multiple" in {
-    test(new PortStreamReader(c, gen)) { c =>
+    test(new PortStreamReader(c)) { c =>
       initClocks(c)
       for (i <- 0 until 10) {
         start(c)

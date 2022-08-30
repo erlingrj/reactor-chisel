@@ -32,13 +32,13 @@ class TestPortStreamWriter extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   val gen = UInt(8.W)
-  val c = PortIOConfig(nElems = 4)
-  val c2 = PortIOConfig(nElems = 1)
+  val c = PortIOConfig(nElems = 4, gen=gen)
+  val c2 = PortIOConfig(nElems = 1,gen=gen)
 
   behavior of "PortStreamWriter"
 
   it should "initialize" in {
-    test(new PortStreamWriter(c, gen)) { c =>
+    test(new PortStreamWriter(c)) { c =>
       initClocks(c)
       c.io.portWrite.en.expect(false.B)
       c.io.in.ready.expect(true.B)
@@ -47,7 +47,7 @@ class TestPortStreamWriter extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   it should "write stream" in {
-    test(new PortStreamWriter(c,gen)) {c =>
+    test(new PortStreamWriter(c)) {c =>
       initClocks(c)
 
       val vals = Seq(12,7,3,3)
@@ -62,7 +62,7 @@ class TestPortStreamWriter extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   it should "write multple streams" in {
-    test(new PortStreamWriter(c,gen)) {c =>
+    test(new PortStreamWriter(c)){c =>
       initClocks(c)
       val valss = Seq(Seq(22,13,23,4), Seq(56,23,1,0), Seq(99,2,23,12), Seq(12,7,3,3))
       for (vals <- valss) {
@@ -79,7 +79,7 @@ class TestPortStreamWriter extends AnyFlatSpec with ChiselScalatestTester {
 
   it should "write single value stream" in {
 
-    test(new PortStreamWriter(c2,gen)) {c =>
+    test(new PortStreamWriter(c2)) {c =>
       initClocks(c)
 
       val vals = Seq(127)

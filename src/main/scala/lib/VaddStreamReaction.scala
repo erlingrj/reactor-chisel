@@ -8,13 +8,13 @@ import reactor._
 
 
 class VaddStreamReaction(len: Int) extends Reaction {
-  val portIOConfig = PortIOConfig(nElems = len)
 
-  val outType = UInt(8.W)
-  val inType = UInt(8.W)
+  val gen = UInt(8.W)
 
-  val out = IO(Flipped(new PortInIO(portIOConfig, UInt(8.W))))
-  val in = IO(Flipped(new PortOutIO(portIOConfig, UInt(8.W))))
+  val portIOConfig = PortIOConfig(nElems = len, gen=gen)
+
+  val out = IO(Flipped(new PortInIO(portIOConfig)))
+  val in = IO(Flipped(new PortOutIO(portIOConfig)))
 
 
   override val triggers = Seq(in)
@@ -25,13 +25,13 @@ class VaddStreamReaction(len: Int) extends Reaction {
     val done = WireInit(false.B)
 
     // TODO: Should this be a trait hasStreamingPortReader hasStreamingPortWriter
-    val readerConfig = PortIOConfig(nElems = len)
-    val reader = Module(new PortStreamReader(readerConfig, inType))
+    val readerConfig = PortIOConfig(nElems = len, gen = gen)
+    val reader = Module(new PortStreamReader(readerConfig))
     reader.io.tieOffExt()
     in <> reader.io.portRead
 
-    val writerConfig = PortIOConfig(nElems = len/2)
-    val writer = Module(new PortStreamWriter(writerConfig, outType))
+    val writerConfig = PortIOConfig(nElems = len/2, gen=gen)
+    val writer = Module(new PortStreamWriter(writerConfig))
     writer.io.tieOffExt()
     out <> writer.io.portWrite
 
@@ -39,7 +39,7 @@ class VaddStreamReaction(len: Int) extends Reaction {
       vec(0) + vec(1)
     }
 
-    val streamAdder = Module(new StreamMapWithStride(inType, 2, add2))
+    val streamAdder = Module(new StreamMapWithStride(gen, 2, add2))
     streamAdder.io.in <> reader.io.out
     streamAdder.io.out <> writer.io.in
 

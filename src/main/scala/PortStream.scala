@@ -5,12 +5,12 @@ import chisel3.util._
 import chisel3.experimental.{DataMirror, Direction}
 
 
-class PortStreamReaderIO[T <: Data](c: PortIOConfig, gen: T) extends Bundle {
-  val portRead = Flipped(new PortOutIO(c,gen))
+class PortStreamReaderIO[T <: Data](c: PortIOConfig[T]) extends Bundle {
+  val portRead = Flipped(new PortOutIO(c))
   val start = Flipped(Decoupled())
   val done = Output(Bool())
 
-  val out = Decoupled(gen)
+  val out = Decoupled(c.gen)
 
   def tieOff(): Unit = {
       portRead.addr := 0.U
@@ -18,15 +18,15 @@ class PortStreamReaderIO[T <: Data](c: PortIOConfig, gen: T) extends Bundle {
       start.ready := false.B
       done := false.B
     out.valid := false.B
-    out.bits := 0.U.asTypeOf(gen)
+    out.bits := 0.U.asTypeOf(c.gen)
     }
   def tieOffExt(): Unit = {
     start.valid := false.B
     out.ready := false.B
   }
 }
-class PortStreamReader[T <: Data](c: PortIOConfig, gen: T) extends Module {
-  val io = IO(new PortStreamReaderIO(c,gen))
+class PortStreamReader[T <: Data](c: PortIOConfig[T]) extends Module {
+  val io = IO(new PortStreamReaderIO(c))
   io.tieOff()
 
   val regCnt = RegInit(0.U((c.nAddrBits+1).W))
@@ -38,7 +38,7 @@ class PortStreamReader[T <: Data](c: PortIOConfig, gen: T) extends Module {
 
   val sIdle :: sRunning :: sDone :: Nil = Enum(3)
   val queueSize = 4
-  val queue = Module(new Queue(gen, queueSize, useSyncReadMem = true))
+  val queue = Module(new Queue(c.gen, queueSize, useSyncReadMem = true))
   queue.io.deq <> io.out
   queue.io.enq.bits := io.portRead.data
   queue.io.enq.valid := regRspValid
@@ -81,9 +81,9 @@ class PortStreamReader[T <: Data](c: PortIOConfig, gen: T) extends Module {
   }
 }
 
-class PortStreamWriterIO[T <: Data](c: PortIOConfig, gen: T) extends Bundle {
-  val in = Flipped(Decoupled(gen))
-  val portWrite = Flipped(new PortInIO(c,gen))
+class PortStreamWriterIO[T <: Data](c: PortIOConfig[T]) extends Bundle {
+  val in = Flipped(Decoupled(c.gen))
+  val portWrite = Flipped(new PortInIO(c))
   val done = Output(Bool())
   val active = Output(Bool())
 
@@ -100,8 +100,8 @@ class PortStreamWriterIO[T <: Data](c: PortIOConfig, gen: T) extends Bundle {
     in.bits := 0.U.asTypeOf(in.bits)
   }
 }
-class PortStreamWriter[T <: Data](c: PortIOConfig, gen: T) extends Module {
-  val io = IO(new PortStreamWriterIO(c,gen))
+class PortStreamWriter[T <: Data](c: PortIOConfig[T]) extends Module {
+  val io = IO(new PortStreamWriterIO(c))
   io.tieOff()
 
   val regCnt = RegInit(0.U(c.nAddrBits.W))

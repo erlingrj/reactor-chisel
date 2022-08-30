@@ -28,13 +28,13 @@ class VaddReactor(p: PlatformWrapperParams) extends ReactorBase(p) {
   // Ports
   // Top->r1_in
   val p_top_r1_in_gen = UInt(8.W)
-  val p_top_r1_in_config = PortConfig(numIn,1)
-  val p_top_r1_in = Module(new RegPort(p_top_r1_in_config, p_top_r1_in_gen))
+  val p_top_r1_in_config = PortConfig(nElems = numIn,nReaders = 1,gen=p_top_r1_in_gen)
+  val p_top_r1_in = Module(new RegPort(p_top_r1_in_config))
 
   // r1_out1->r2_in2
   val p_r1_out_top_gen = UInt(8.W)
-  val p_r1_out_top_config = PortConfig(numOut,1)
-  val p_r1_out_top = Module(new RegPort(p_r1_out_top_config, p_r1_out_top_gen))
+  val p_r1_out_top_config = PortConfig(nElems = numOut,nReaders = 1, gen=p_r1_out_top_gen)
+  val p_r1_out_top = Module(new RegPort(p_r1_out_top_config))
 
   // Connections
   // Ports

@@ -10,24 +10,26 @@ import chisel3.experimental.DataMirror
  */
 
 
-case class PortConfig(
+case class PortConfig[T <: Data](
   nElems: Int,
-  nReaders: Int
+  nReaders: Int,
+  gen: T
 ) {
-  def getPortIOConfig: PortIOConfig = PortIOConfig(nElems)
+  def getPortIOConfig: PortIOConfig[T] = PortIOConfig(nElems,gen)
 }
 
-case class PortIOConfig(
+case class PortIOConfig[T <: Data](
   nElems: Int,
+  gen: T
 ) {
   def nAddrBits: Int = if (nElems > 1) log2Ceil(nElems) else 1
 }
 
 // PortIn is a antiDependency
-class PortInIO[T <: Data](c: PortIOConfig, gen: T) extends Bundle {
+class PortInIO[T <: Data](c: PortIOConfig[T]) extends Bundle {
   val en = Input(Bool())
   val addr = Input(UInt(c.nAddrBits.W))
-  val data = Input(gen)
+  val data = Input(c.gen)
 
   def reactionTieOff: Unit = {
     en := false.B
@@ -37,11 +39,11 @@ class PortInIO[T <: Data](c: PortIOConfig, gen: T) extends Bundle {
 }
 
 // PortOut is a trigger/dependency
-class PortOutIO[T <: Data](c: PortIOConfig, gen: T) extends Bundle {
+class PortOutIO[T <: Data](c: PortIOConfig[T]) extends Bundle {
   val present = Output(Bool())
   val addr = Input(UInt(c.nAddrBits.W))
   val en = Input(Bool())
-  val data = Output(gen)
+  val data = Output(c.gen)
 
   def reactionTieOff: Unit = {
     addr := 0.U
@@ -49,14 +51,14 @@ class PortOutIO[T <: Data](c: PortIOConfig, gen: T) extends Bundle {
   }
 }
 
-class PortIO[T <: Data](c: PortConfig, gen: T) extends Bundle {
-  val in = new PortInIO(c.getPortIOConfig,gen)
-  val outs = Vec(c.nReaders, new PortOutIO(c.getPortIOConfig,gen))
+class PortIO[T <: Data](c: PortConfig[T]) extends Bundle {
+  val in = new PortInIO(c.getPortIOConfig)
+  val outs = Vec(c.nReaders, new PortOutIO(c.getPortIOConfig))
   val evalEnd = Input(Bool())
 }
 
-abstract class Port[T <: Data](c: PortConfig, gen: T) extends Module {
-  val io = IO(new PortIO(c,gen))
+abstract class Port[T <: Data](c: PortConfig[T]) extends Module {
+  val io = IO(new PortIO(c))
 
   val regPresent = RegInit(false.B)
   io.outs.map(_.present := regPresent)
@@ -76,18 +78,18 @@ abstract class Port[T <: Data](c: PortConfig, gen: T) extends Module {
 }
 
 
-class BramPort[T <: Data](c: PortConfig, gen:T) extends Port[T](c, gen) {
+class BramPort[T <: Data](c: PortConfig[T]) extends Port[T](c) {
 
 }
 
-class DramPort[T <: Data](c: PortConfig, gen: T) extends Port[T](c, gen) {
+class DramPort[T <: Data](c: PortConfig[T]) extends Port[T](c) {
 
 }
 
-class RegPort[T <: Data](c: PortConfig, gen: T) extends Port[T](c, gen) {
+class RegPort[T <: Data](c: PortConfig[T]) extends Port[T](c) {
 
-  val data = RegInit(VecInit(Seq.fill(c.nElems)(0.U.asTypeOf(gen))))
-  val readBufs = RegInit(VecInit(Seq.fill(c.nReaders)(0.U.asTypeOf(gen))))
+  val data = RegInit(VecInit(Seq.fill(c.nElems)(0.U.asTypeOf(c.gen))))
+  val readBufs = RegInit(VecInit(Seq.fill(c.nReaders)(0.U.asTypeOf(c.gen))))
 
   // Reading
   io.outs zip readBufs map({ case (port, buf) => port.data := buf })
