@@ -62,7 +62,7 @@ class SchedulerCtrlIO extends Bundle {
 
 }
 
-class Scheduler(val c: SchedulerConfig)(implicit rc: ReactorGlobalParams) extends Module {
+class Scheduler(val c: SchedulerConfig) extends Module {
   val ioSchedulerCtrl = IO(new SchedulerCtrlIO())
   val ioReactionCtrl = IO(Vec(c.nReactions, Flipped(new ReactionCtrlIO())))
 

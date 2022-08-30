@@ -52,7 +52,6 @@ class TestScheduler extends AnyFlatSpec with ChiselScalatestTester  {
   def scheduleStart(c: Scheduler): Unit = {
     c.ioSchedulerCtrl.start.enqueueNow(chiselTypeOf(c.ioSchedulerCtrl.start.bits))
   }
-  val rc = ReactorGlobalParams()
   val c1 = SchedulerConfig(
     schedule = Seq(Seq(0))
   )
@@ -68,7 +67,7 @@ class TestScheduler extends AnyFlatSpec with ChiselScalatestTester  {
   behavior of "Scheduler"
 
   it should "initialize" in {
-    test(new Scheduler(c1)(rc)) { c =>
+    test(new Scheduler(c1)) { c =>
       initClocks(c)
       c.ioSchedulerCtrl.start.ready.expect(true.B)
       c.ioReactionCtrl.map(_.enable.valid.expect(false.B))
@@ -76,7 +75,7 @@ class TestScheduler extends AnyFlatSpec with ChiselScalatestTester  {
   }
 
   it should "enable reaction" in {
-    test(new Scheduler(c1)(rc)) { c =>
+    test(new Scheduler(c1)) { c =>
       initClocks(c)
       c.ioSchedulerCtrl.start.enqueueNow(chiselTypeOf(c.ioSchedulerCtrl.start.bits))
       simReaction(c,0,-1,5)
@@ -85,7 +84,7 @@ class TestScheduler extends AnyFlatSpec with ChiselScalatestTester  {
   }
 
   it should "support multiple firings" in
-  test(new Scheduler(c1)(rc)) { c =>
+  test(new Scheduler(c1)) { c =>
     initClocks(c)
     val durations = Seq(5,10,14,23,4)
     for (i <- 0 until 5) {
@@ -96,7 +95,7 @@ class TestScheduler extends AnyFlatSpec with ChiselScalatestTester  {
   }
 
   it should "support more complex schedule" in {
-    test(new Scheduler(c2)(rc)) { c =>
+    test(new Scheduler(c2)) { c =>
       initClocks(c)
       c.ioSchedulerCtrl.start.ready.expect(true.B)
       c.ioReactionCtrl.map(_.enable.valid.expect(false.B))

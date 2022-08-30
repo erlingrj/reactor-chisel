@@ -6,7 +6,7 @@ import chisel3.experimental.DataMirror.directionOf
 
 
 
-class ReactionCtrlIO (implicit rc: ReactorGlobalParams) extends Bundle {
+class ReactionCtrlIO extends Bundle {
   // Control signals
   val done = Output(Bool())
   val running = Output(Bool())
@@ -24,7 +24,7 @@ class ReactionCtrlIO (implicit rc: ReactorGlobalParams) extends Bundle {
   }
 }
 
-abstract class Reaction(implicit rc: ReactorGlobalParams) extends Module {
+abstract class Reaction extends Module {
   val ioCtrl = IO(new ReactionCtrlIO())
   ioCtrl.tieOff
 
@@ -38,7 +38,6 @@ abstract class Reaction(implicit rc: ReactorGlobalParams) extends Module {
   val reactionDone = Wire(Bool())
   reactionDone := false.B
 
-  // TODO: Should probably abort reaction execution if it exceeds some amount to catch mistakes
   def reactionBody: Unit
 
   val sIdle :: sRunning :: sDone :: Nil = Enum(3)

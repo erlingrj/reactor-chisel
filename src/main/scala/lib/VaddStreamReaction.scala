@@ -7,7 +7,7 @@ import reactor._
 
 
 
-class VaddStreamReaction(len: Int)(implicit val rc: ReactorGlobalParams) extends Reaction {
+class VaddStreamReaction(len: Int) extends Reaction {
   val portIOConfig = PortIOConfig(nElems = len)
 
   val outType = UInt(8.W)
