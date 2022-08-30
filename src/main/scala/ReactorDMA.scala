@@ -9,11 +9,22 @@ import fpgatidbits.PlatformWrapper._
 
 import scala.math.ceil
 
+
 case class ReactorDMAConfig(
-  nElemsIn : Int,
-  nElemsOut : Int,
+  inPorts : MixedVec[PortIOConfig[Data]],
+
+
+  nElemsIn : Seq[Int],
+  nElemsOut : Seq[Int],
+  nInputPorts: Int,
+  nOutputPorts: Int,
   mrp : MemReqParams
-)
+) {
+  require(nInputPorts > 0)
+  require(nInputPorts == nElemsIn.length)
+  require(nOutputPorts > 0)
+  require(nOutputPorts == nElemsOut)
+}
 
 class DmaTransactionInfo(p: MemReqParams) extends Bundle {
   val baseAddr = UInt(p.addrWidth.W)
@@ -22,7 +33,10 @@ class DmaTransactionInfo(p: MemReqParams) extends Bundle {
 class ReactorDMAIO[A <: Data, B <: Data](c: ReactorDMAConfig, genIn: A, genOut: B)  extends Bundle {
   val memPort = new GenericMemoryMasterPort(c.mrp)
 
-  val portRead = Flipped(new PortOutIO(PortIOConfig(c.nElemsOut),genOut))
+  val portRead = Seq.tabulate(c.nOutputPorts)(i => Flipped(new PortOutIO(PortIOConfig(c.nElemsOut(i)),genOut)))
+  val portWrite = Seq.tabulate(c.nInputPorts)(i => Flipped(new PortInIO(PortIOConfig(c.nElemsIn(i)),genIn)))
+
+
   val portWrite = Flipped(new PortInIO(PortIOConfig(c.nElemsIn), genIn))
 
 
