@@ -27,10 +27,9 @@ class ReactorIO extends Bundle {
   }
 }
 
-abstract class ReactorBase(p: PlatformWrapperParams)(implicit val rp: ReactorGlobalParams)
+abstract class ReactorBase(p: PlatformWrapperParams)
   extends GenericAccelerator(p) {
 
-  //
   val numMemPorts = 1
   val ioMem = IO(new GenericAcceleratorMemIO(numMemPorts, p))
   val io = IO(new ReactorIO())
@@ -46,7 +45,6 @@ abstract class ReactorBase(p: PlatformWrapperParams)(implicit val rp: ReactorGlo
   def connectScheduler2Ports = {
     ports.map(_.io.evalEnd := scheduler.ioSchedulerCtrl.done)
   }
-
 
   def inByteCount: Int
   def outByteCount: Int
@@ -106,7 +104,6 @@ abstract class ReactorBase(p: PlatformWrapperParams)(implicit val rp: ReactorGlo
       }
 
       is (sDone) {
-        //TODO: Now we are stuck at sDone until we do a reset
         io.done := true.B
       }
     }

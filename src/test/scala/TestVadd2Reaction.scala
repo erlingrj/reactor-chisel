@@ -17,12 +17,10 @@ class TestVadd2Reaction extends AnyFlatSpec with ChiselScalatestTester {
     c.ioCtrl.enable.initSource().setSourceClock(c.clock)
   }
 
-  val rc = ReactorGlobalParams()
-
   behavior of "Vadd2Reaction"
 
   it should "initialize" in {
-    test(new VaddStreamReaction(10)(rc)) { c =>
+    test(new VaddStreamReaction(10)) { c =>
       initClocks(c)
       c.out.en.expect(false.B)
       c.in.addr.expect(0.U)
@@ -30,7 +28,7 @@ class TestVadd2Reaction extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   it should "read from port" in {
-    test(new VaddStreamReaction(10)(rc)) { c =>
+    test(new VaddStreamReaction(10)) { c =>
       initClocks(c)
       val in = Seq(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
       val out = in.sliding(2,2).map(_.sum).toSeq
@@ -40,7 +38,7 @@ class TestVadd2Reaction extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   it should "do computation" in {
-    test(new VaddStreamReaction(10)(rc)) { c =>
+    test(new VaddStreamReaction(10)) { c =>
       initClocks(c)
       val in = Seq(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
       val out = in.sliding(2,2).map(_.sum).toSeq

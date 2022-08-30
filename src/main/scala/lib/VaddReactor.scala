@@ -6,7 +6,7 @@ import chisel3.util._
 import reactor._
 import fpgatidbits.PlatformWrapper._
 
-class VaddReactor(p: PlatformWrapperParams)(implicit rp: ReactorGlobalParams) extends ReactorBase(p) {
+class VaddReactor(p: PlatformWrapperParams) extends ReactorBase(p) {
 
   // Schduler
   val schedulerConfig = SchedulerConfig(
