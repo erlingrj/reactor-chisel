@@ -49,13 +49,13 @@ class VaddReactor(p: PlatformWrapperParams) extends ReactorBase(p) {
 
   // DMA
   val dmaConfig = ReactorDMAConfig(
-    nElemsIn = numIn, nElemsOut = numOut, mrp = p.toMemReqParams()
+    inPorts = Array(p_top_r1_in_config.getPortIOConfig), outPorts=Array(p_r1_out_top_config.getPortIOConfig),mrp = p.toMemReqParams()
   )
 
-  val dma = Module(new ReactorDMA(dmaConfig, p_top_r1_in_gen, p_r1_out_top_gen))
+  val dma = Module(new ReactorDMA(dmaConfig))
   dma.io.tieOffExt
-  dma.io.portRead <> p_r1_out_top.io.outs(0)
-  dma.io.portWrite <> p_top_r1_in.io.in
+  dma.io.portRead(0) <> p_r1_out_top.io.outs(0)
+  dma.io.portWrite(0) <> p_top_r1_in.io.in
   dma.io.memPort <> ioMem.memPort(0)
 
   connectScheduler2Ports

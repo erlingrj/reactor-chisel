@@ -18,7 +18,7 @@ case class PortConfig[T <: Data](
   def getPortIOConfig: PortIOConfig[T] = PortIOConfig(nElems,gen)
 }
 
-case class PortIOConfig[T <: Data](
+case class PortIOConfig[+T <: Data](
   nElems: Int,
   gen: T
 ) {
@@ -26,7 +26,7 @@ case class PortIOConfig[T <: Data](
 }
 
 // PortIn is a antiDependency
-class PortInIO[T <: Data](c: PortIOConfig[T]) extends Bundle {
+class PortInIO[+T <: Data](c: PortIOConfig[T]) extends Bundle {
   val en = Input(Bool())
   val addr = Input(UInt(c.nAddrBits.W))
   val data = Input(c.gen)

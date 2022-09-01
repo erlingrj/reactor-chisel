@@ -36,7 +36,7 @@ abstract class ReactorBase(p: PlatformWrapperParams)
   io.signature := makeDefaultSignature()
   io.tieOff
 
-  val dma: ReactorDMA[_<:Data, _<:Data]
+  val dma: ReactorDMA
   val scheduler: Scheduler
   val ports: Seq[_ <: Port[_ <: Data]]
   def pTopIn = ports(0)
@@ -63,7 +63,6 @@ abstract class ReactorBase(p: PlatformWrapperParams)
         when (io.start) {
           dma.io.readStart.valid := true.B
           dma.io.readStart.bits.baseAddr := io.baseAddr
-          dma.io.readStart.bits.byteCount := inByteCount.U
 
           when (dma.io.readStart.fire) {
             regCycles := 0.U
@@ -86,7 +85,6 @@ abstract class ReactorBase(p: PlatformWrapperParams)
 
           when(pTopOut.io.outs(0).present) {
             dma.io.writeStart.valid := true.B
-            dma.io.writeStart.bits.byteCount := outByteCount.U
             dma.io.writeStart.bits.baseAddr := io.baseAddrRes
             assert(dma.io.writeStart.fire)
             regState := sWriteBack
