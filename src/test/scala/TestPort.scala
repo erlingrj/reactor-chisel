@@ -9,7 +9,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 
 object TestPortAccess {
-  def expRead(c: PortOutIO[UInt], clk: Clock, vals: Seq[Int]): Unit = {
+  def expRead(c: PortOutIO[Data], clk: Clock, vals: Seq[Int]): Unit = {
     var addr = 0
     for (v <- vals) {
       while(!c.en.peekBoolean()) {
@@ -23,7 +23,7 @@ object TestPortAccess {
     clk.step()
   }
 
-  def expWrite(c: PortInIO[UInt], clk: Clock, eVals: Seq[Int]): Unit = {
+  def expWrite(c: PortInIO[Data], clk: Clock, eVals: Seq[Int]): Unit = {
       var addr = 0
       for (v <- eVals) {
         while (!c.en.peekBoolean()) {

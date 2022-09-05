@@ -29,11 +29,13 @@ object ChiselMain {
     val targetDir: String = args(0)
 
     val platformInst = {f: (PlatformWrapperParams => GenericAccelerator) => new VerilatedTesterWrapper(f, targetDir)}
-    val accInst = {p: PlatformWrapperParams => new VaddReactor(p) }
+    val accInst = {p: PlatformWrapperParams => new VaddReactor(p,5) }
 
     val verilogString = (new chisel3.stage.ChiselStage).emitVerilog(platformInst(accInst))
     Settings.writeVerilogToFile(verilogString, targetDir + "/TesterWrapper.v")
     val resRoot = Paths.get("src/main/resources").toAbsolutePath.toString
-    fpgatidbits.TidbitsMakeUtils.fileCopyBulk(resRoot, targetDir, Seq("main.cpp", "Makefile"))
+    val resTestRoot = resRoot + "/TestVaddReactor"
+    fpgatidbits.TidbitsMakeUtils.fileCopy(resRoot + "/Makefile", targetDir)
+    fpgatidbits.TidbitsMakeUtils.fileCopy(resTestRoot + "/main.cpp", targetDir)
   }
 }
