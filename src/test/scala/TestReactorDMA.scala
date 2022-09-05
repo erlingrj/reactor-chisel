@@ -167,33 +167,39 @@ class TestReactorDMA extends AnyFlatSpec with ChiselScalatestTester {
       }
     }
   }
-  /*
 
   it should "Write the right data from mem" in {
-    test(new ReactorDMAWithMem(c,genIn,genOut)) { c =>
+    test(new ReactorDMAWithMem(cfg)) { c =>
       initClocks(c)
-      val mem = Seq(10,11,12,13)
+      val mem1 = (10 to 17)
+      val mem2 = (18 to 25)
+
       fork {
-        startWrite(c, 4 * 8)
+        startWrite(c, Seq(true,true))
       }. fork {
-        expRead(c.io.portRead, c.clock, mem)
+        expRead(c.io.portRead(1), c.clock, mem2)
+      }. fork {
+        expRead(c.io.portRead(0), c.clock, mem1)
       }.join()
+
       while(!c.io.writeDone.peekBoolean()) {
         c.clock.step()
       }
-      inspectMem(c, mem)
+      inspectMem(c, mem1++mem2)
     }
   }
-
   it should "Read and write data and finish" in {
-    test(new ReactorDMAWithMem(c,genIn,genOut)) { c =>
+    test(new ReactorDMAWithMem(cfg)) { c =>
       initClocks(c)
-      val mem = Seq(101,102,103,104)
-      populateMem(c, mem)
+      val mem1 = (10 to 17)
+      val mem2 = (18 to 25)
+      populateMem(c, mem1 ++ mem2)
       fork {
-        startRead(c, 4 * 8)
+        startRead(c, Seq(true,true))
       }. fork {
-        expWrite(c.io.portWrite, c.clock, mem)
+        expWrite(c.io.portWrite(0), c.clock, mem1)
+      }.fork{
+        expWrite(c.io.portWrite(1), c.clock, mem2)
       }. join()
 
       while(!c.io.readDone.peekBoolean()) {
@@ -201,33 +207,37 @@ class TestReactorDMA extends AnyFlatSpec with ChiselScalatestTester {
       }
 
       fork {
-        startWrite(c, 4 * 8)
+        startWrite(c, Seq(true,true))
       }. fork {
-        expRead(c.io.portRead, c.clock, mem)
+        expRead(c.io.portRead(0), c.clock, mem1)
+      }. fork {
+        expRead(c.io.portRead(1), c.clock, mem2)
       }.join()
+
       while(!c.io.writeDone.peekBoolean()) {
         c.clock.step()
       }
-      inspectMem(c, mem)
+      inspectMem(c, mem1 ++ mem2)
 
     }
   }
 
   it should "Read and write multiple data and finish" in {
-    test(new ReactorDMAWithMem(c,genIn,genOut)) { c =>
+    test(new ReactorDMAWithMem(cfg)) { c =>
       initClocks(c)
       val mem = Seq(
-        Seq(101,102,103,104),
-        Seq(200,201,202,203),
-        Seq(70,71,72,73)
+        Seq(10 until 18, 20 until 28),
+        Seq(30 until 38, 40 until 48),
+        Seq(50 until 58, 60 until 68),
       )
       for (m <- mem) {
-
-        populateMem(c, m)
+        populateMem(c, m(0) ++ m(1))
         fork {
-          startRead(c, 4 * 8)
+          startRead(c, Seq(true,true))
         }. fork {
-          expWrite(c.io.portWrite, c.clock, m)
+          expWrite(c.io.portWrite(0), c.clock, m(0))
+        }. fork {
+          expWrite(c.io.portWrite(1), c.clock, m(1))
         }. join()
 
         while(!c.io.readDone.peekBoolean()) {
@@ -235,30 +245,36 @@ class TestReactorDMA extends AnyFlatSpec with ChiselScalatestTester {
         }
 
         fork {
-          startWrite(c, 4 * 8)
+          startWrite(c, Seq(true,true))
         }. fork {
-          expRead(c.io.portRead, c.clock, m)
+          expRead(c.io.portRead(0), c.clock, m(0))
+        }. fork {
+          expRead(c.io.portRead(1), c.clock, m(1))
         }.join()
         while(!c.io.writeDone.peekBoolean()) {
           c.clock.step()
         }
-        inspectMem(c, m)
-
+        inspectMem(c, m(0)++m(1))
       }
       }
   }
 
   it should "Read and write data with multiple lenghts and finish" in {
-    test(new ReactorDMAWithMem(c2,genIn,genOut)) { c =>
+    test(new ReactorDMAWithMem(cfg2)) { c =>
       initClocks(c)
-      val memIn = Seq(101,102,103,104,105,106)
-      val memOut = Seq(201,202,203)
 
-      populateMem(c, memIn)
+      val mem1 = 10 until 14
+      val mem2 = 20 until 25
+      val mem3 = 30 until 36
+      val mem4 = 1 until 8
+
+      populateMem(c, mem1++mem2)
       fork {
-        startRead(c, 6 * 8)
+        startRead(c, Seq(true, true))
       }. fork {
-        expWrite(c.io.portWrite, c.clock, memIn)
+        expWrite(c.io.portWrite(0), c.clock, mem1)
+      }. fork {
+        expWrite(c.io.portWrite(1), c.clock, mem2)
       }. join()
 
       while(!c.io.readDone.peekBoolean()) {
@@ -266,15 +282,45 @@ class TestReactorDMA extends AnyFlatSpec with ChiselScalatestTester {
       }
 
       fork {
-        startWrite(c, 3 * 8)
+        startWrite(c, Seq(true, true))
       }. fork {
-        expRead(c.io.portRead, c.clock, memOut)
+        expRead(c.io.portRead(0), c.clock, mem3)
+      }. fork {
+        expRead(c.io.portRead(1), c.clock, mem4)
       }.join()
       while(!c.io.writeDone.peekBoolean()) {
         c.clock.step()
       }
-      inspectMem(c, memOut)
+      inspectMem(c, mem3++mem4)
     }
   }
-*/
+
+  it should "read and write only some ports" in {
+    test(new ReactorDMAWithMem(cfg)) { c =>
+      initClocks(c)
+      val mem1 = (10 to 17)
+      val mem2 = (18 to 25)
+      populateMem(c, mem1++mem2)
+      fork {
+        startRead(c, Seq(false,true))
+      }.fork{
+        expWrite(c.io.portWrite(1), c.clock, mem2)
+      }. join()
+
+      while(!c.io.readDone.peekBoolean()) {
+        c.clock.step()
+      }
+
+      fork {
+        startWrite(c, Seq(false,true))
+      }. fork {
+        expRead(c.io.portRead(1), c.clock, mem1)
+      }.join()
+
+      while(!c.io.writeDone.peekBoolean()) {
+        c.clock.step()
+      }
+      inspectMem(c, mem1 ++ mem1)
+    }
+  }
 }

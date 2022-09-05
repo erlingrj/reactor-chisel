@@ -2,12 +2,10 @@ package reactor
 
 import chisel3._
 import chisel3.util._
-import chisel3.experimental.BundleLiterals._
-import fpgatidbits.dma._
 import fpgatidbits.PlatformWrapper._
+import fpgatidbits.dma._
 
 import scala.collection.mutable.ArrayBuffer
-import scala.math.ceil
 
 
 case class ReactorDMAConfig(
@@ -31,6 +29,8 @@ case class ReactorDMAConfig(
 
   def nInPorts: Int = inPorts.length
   def nOutPorts: Int = outPorts.length
+  def nOutPortsBits: Int = if(nOutPorts == 1) 1 else log2Ceil(nOutPorts)
+  def nInPortsBits: Int = if(nInPorts == 1) 1 else log2Ceil(nInPorts)
 
   // Calculate the byteCounts needed for each Input Port data fetch from DRAM
   def inByteCounts: Vec[UInt]= VecInit(Seq.tabulate(nInPorts)(i => (inPorts(i).nElems * 8).U(32.W)))
@@ -47,7 +47,19 @@ case class ReactorDMAConfig(
     VecInit(Seq.tabulate(nInPorts)(i => baseAddr + offsets(i).U(mrp.addrWidth.W)))
   }
 
+  def outByteCounts: Vec[UInt]= VecInit(Seq.tabulate(nOutPorts)(i => (outPorts(i).nElems * 8).U(32.W)))
 
+  // Calculate the base address for each Input Port data fetch from DRAM
+  def outBaseAddrs(baseAddr: UInt): Vec[UInt] = {
+    var offsets = ArrayBuffer[Int]()
+    for (i <- 0 until nOutPorts) {
+      if (i == 0) {
+        offsets += 0
+      } else
+        offsets += offsets(i-1) + outPorts(i-1).nElems*8
+    }
+    VecInit(Seq.tabulate(nOutPorts)(i => baseAddr + offsets(i).U(mrp.addrWidth.W)))
+  }
 }
 
 class DmaTransactionInfo(len: Int, p: MemReqParams) extends Bundle {
@@ -57,8 +69,8 @@ class DmaTransactionInfo(len: Int, p: MemReqParams) extends Bundle {
 class ReactorDMAIO(c: ReactorDMAConfig)  extends Bundle {
   val memPort = new GenericMemoryMasterPort(c.mrp)
 
-  val portRead = MixedVec(Seq.tabulate(c.inPorts.length)(i => Flipped(new PortOutIO(c.inPorts(i)))))
-  val portWrite = MixedVec(Seq.tabulate(c.outPorts.length)(i => Flipped(new PortInIO(c.outPorts(i)))))
+  val portRead = MixedVec(Seq.tabulate(c.outPorts.length)(i => Flipped(new PortOutIO(c.outPorts(i)))))
+  val portWrite = MixedVec(Seq.tabulate(c.inPorts.length)(i => Flipped(new PortInIO(c.inPorts(i)))))
 
   val readStart = Flipped(Decoupled(new DmaTransactionInfo(c.nInPorts, c.mrp)))
   val readDone = Output(Bool())
@@ -109,10 +121,20 @@ class ReactorDMA(c: ReactorDMAConfig) extends Module {
   val memStreamReader = Module(new StreamReader(streamReaderParams)).io
 
   // Create the PortStreamReader and Writer
-  val portStreamReaders = for (outCfg <- c.outPorts) yield {
+  val _portStreamReaders = for (outCfg <- c.outPorts) yield {
     Module(new PortStreamReader(outCfg)).io
   }
-  portStreamReaders.map(_.tieOffExt())
+  val portStreamReadersStart = Wire(Vec(c.nOutPorts, Decoupled()))
+  val portStreamReadersOut = Wire(Vec(c.nOutPorts, Decoupled(UInt(c.maxInWidth.W))))
+  val portStreamReadersDone = Wire(Vec(c.nOutPorts, Bool()))
+  for (i <- 0 until c.nOutPorts) {
+    portStreamReadersOut(i) <> _portStreamReaders(i).out
+    portStreamReadersStart(i) <> _portStreamReaders(i).start
+    portStreamReadersDone(i) := _portStreamReaders(i).done
+    // Also drive default value of wires
+    portStreamReadersOut(i).ready := false.B
+    portStreamReadersStart(i).valid := false.B
+  }
 
 
   val _portStreamWriters = for (inCfg <- c.inPorts) yield {
@@ -139,12 +161,13 @@ class ReactorDMA(c: ReactorDMAConfig) extends Module {
   val regReadState = RegInit(sIdle)
   val regWriteState = RegInit(sIdle)
 
-  val regWrBaseAddr = RegInit(0.U(c.mrp.addrWidth.W))
+  val regWrTxInfo = RegInit(0.U.asTypeOf(new DmaTransactionInfo(c.nOutPorts, c.mrp)))
   val regWrByteCount = RegInit(0.U(32.W))
+  val regWrTxCnt = RegInit(0.U(c.nOutPortsBits.W))
 
   val regRdTxInfo = RegInit(0.U.asTypeOf(new DmaTransactionInfo(c.nInPorts, c.mrp)))
   val regRdByteCount = RegInit(0.U(32.W))
-  val regRdTxCnt = RegInit(0.U(log2Ceil(c.nInPorts).W))
+  val regRdTxCnt = RegInit(0.U(c.nInPortsBits.W))
 
 
 
@@ -156,7 +179,7 @@ class ReactorDMA(c: ReactorDMAConfig) extends Module {
   memStreamWriter.wdat <> io.memPort.memWrDat
 
   // Connect PortStreamWriter/Reader to Port ports
-  (portStreamReaders zip io.portRead).foreach {case(stream, port) => stream.portRead <> port}
+  (_portStreamReaders zip io.portRead).foreach {case(stream, port) => stream.portRead <> port}
   (_portStreamWriters zip io.portWrite).foreach {case(stream, port) => stream.portWrite <> port}
 
   // Reading FSM
@@ -192,6 +215,12 @@ class ReactorDMA(c: ReactorDMAConfig) extends Module {
         memStreamReader.initCount := 0.U
         memStreamReader.doInit := false.B
         memStreamReader.start := true.B
+
+        when (memStreamReader.finished) {
+          assert(regRdTxInfo.present(regRdTxCnt))
+          regReadState := sWaiting
+        }
+
       } otherwise {
         when (regRdTxCnt === (c.nInPorts-1).U) {
           regReadState := sDone
@@ -200,10 +229,6 @@ class ReactorDMA(c: ReactorDMAConfig) extends Module {
         }
       }
 
-      when (memStreamReader.finished) {
-        assert(regRdTxInfo.present(regRdTxCnt))
-        regReadState := sWaiting
-      }
     }
 
     is (sWaiting) {
@@ -224,7 +249,6 @@ class ReactorDMA(c: ReactorDMAConfig) extends Module {
     }
   }
 
-  // Writing FSM
   // Defaults
   io.writeStart.ready := false.B
   io.writeDone := false.B
@@ -234,6 +258,60 @@ class ReactorDMA(c: ReactorDMAConfig) extends Module {
   memStreamWriter.in.bits :=0.U
   memStreamWriter.in.valid := false.B
 
+  // Connect memStreamReader and portStreamReader based on the loop iterator
+  memStreamWriter.in <> portStreamReadersOut(regWrTxCnt)
+
+
+  // Writing FSM
+  // Start in Idle and ready. Then when triggered it goes to Running->Waiting->Running until all data
+  // is written to shared mem
+  switch (regWriteState) {
+    is (sIdle) {
+      io.writeStart.ready := true.B
+      when(io.writeStart.fire) {
+        regWriteState := sRunning
+        regWrTxInfo := io.writeStart.bits
+        regWrTxCnt := 0.U
+      }
+    }
+
+
+    is (sRunning) {
+      when (regWrTxInfo.present(regWrTxCnt)) {
+        portStreamReadersStart(regWrTxCnt).valid := true.B
+        assert(portStreamReadersStart(regWrTxCnt).fire)
+        regWriteState := sWaiting
+      } otherwise {
+        when (regWrTxCnt === (c.nOutPorts-1).U) {
+          regWriteState := sDone
+        } otherwise {
+          regWrTxCnt := regWrTxCnt + 1.U
+        }
+      }
+    }
+
+    is (sWaiting) {
+      assert(regWrTxInfo.present(regWrTxCnt))
+      memStreamWriter.baseAddr := c.outBaseAddrs(regWrTxInfo.baseAddr)(regWrTxCnt)
+      memStreamWriter.byteCount := c.outByteCounts(regWrTxCnt)
+      memStreamWriter.start := true.B
+
+      when (memStreamWriter.finished) {
+        when (regWrTxCnt === (c.nOutPorts-1).U) {
+          regWriteState := sDone
+        } otherwise {
+          regWriteState := sRunning
+          regWrTxCnt := regWrTxCnt + 1.U
+        }
+      }
+    }
+
+    is (sDone) {
+      io.writeDone := true.B
+      regWrTxCnt := 0.U
+      regWriteState := sIdle
+    }
+  }
 
   assert(!(io.readStart.fire && RegNext(memStreamReader.active)), "[ReactorDMA] DMA read was requested while already performing read")
   assert(!(io.writeStart.fire && RegNext(memStreamWriter.active)), "[ReactorDMA] DMA write was requested while already performing a write")
@@ -242,8 +320,8 @@ class ReactorDMA(c: ReactorDMAConfig) extends Module {
 
 class ReactorDMAWithMem(c: ReactorDMAConfig) extends Module {
   val io = IO(new Bundle {
-    val portRead = MixedVec(Seq.tabulate(c.inPorts.length)(i => Flipped(new PortOutIO(c.inPorts(i)))))
-    val portWrite = MixedVec(Seq.tabulate(c.outPorts.length)(i => Flipped(new PortInIO(c.outPorts(i)))))
+    val portRead = MixedVec(Seq.tabulate(c.outPorts.length)(i => Flipped(new PortOutIO(c.outPorts(i)))))
+    val portWrite = MixedVec(Seq.tabulate(c.inPorts.length)(i => Flipped(new PortInIO(c.inPorts(i)))))
 
     val readStart = Flipped(Decoupled(new DmaTransactionInfo(c.nInPorts, c.mrp)))
     val readDone = Output(Bool())
