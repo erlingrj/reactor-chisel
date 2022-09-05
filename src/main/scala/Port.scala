@@ -10,6 +10,7 @@ import chisel3.experimental.DataMirror
  */
 
 
+// TODO: The difference between PortConfig and PortIOConfig is not that clear. Revisit
 case class PortConfig[T <: Data](
   nElems: Int,
   nReaders: Int,
@@ -39,7 +40,7 @@ class PortInIO[+T <: Data](c: PortIOConfig[T]) extends Bundle {
 }
 
 // PortOut is a trigger/dependency
-class PortOutIO[T <: Data](c: PortIOConfig[T]) extends Bundle {
+class PortOutIO[+T <: Data](c: PortIOConfig[T]) extends Bundle {
   val present = Output(Bool())
   val addr = Input(UInt(c.nAddrBits.W))
   val en = Input(Bool())

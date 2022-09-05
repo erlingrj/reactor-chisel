@@ -11,6 +11,8 @@ import chisel3.experimental.noPrefix
 class ReactorIO extends Bundle {
     val start = Input(Bool())
     val done = Output(Bool())
+    val presentIn = Input(UInt(32.W))
+    val presentOut = Output(UInt(32.W))
     val baseAddr = Input(UInt(64.W))
     val baseAddrRes = Input(UInt(64.W))
     val faultType = Output(UInt(8.W))
@@ -24,9 +26,12 @@ class ReactorIO extends Bundle {
     faultType := ReactorFault.None.asUInt
     faultReaction := 0.U
     currReaction := 0.U
+    presentOut := 0.U
   }
 }
 
+// TODO: Make static check of: nPorts (vs 32 is the max number of presence signals)
+// TODO: require that the output ports only have 1 reader
 abstract class ReactorBase(p: PlatformWrapperParams)
   extends GenericAccelerator(p) {
 
@@ -38,16 +43,13 @@ abstract class ReactorBase(p: PlatformWrapperParams)
 
   val dma: ReactorDMA
   val scheduler: Scheduler
-  val ports: Seq[_ <: Port[_ <: Data]]
-  def pTopIn = ports(0)
-  def pTopOut = ports.last
+  val inPorts: Seq[_ <: Port[_ <: Data]]
+  val outPorts: Seq[_ <: Port[_ <: Data]]
 
   def connectScheduler2Ports = {
-    ports.map(_.io.evalEnd := scheduler.ioSchedulerCtrl.done)
+    (inPorts ++ outPorts).map(_.io.evalEnd := scheduler.ioSchedulerCtrl.done)
   }
 
-  def inByteCount: Int
-  def outByteCount: Int
 
   // Top-level state machine
   val sIdle :: sRead :: sRunning :: sWriteBack :: sDone :: Nil = Enum(5)
@@ -63,6 +65,9 @@ abstract class ReactorBase(p: PlatformWrapperParams)
         when (io.start) {
           dma.io.readStart.valid := true.B
           dma.io.readStart.bits.baseAddr := io.baseAddr
+          dma.io.readStart.bits.present := io.presentIn.asBools.take(inPorts.length)
+
+          assert(io.presentIn > 0.U, "Top Reactor started with no present input signals")
 
           when (dma.io.readStart.fire) {
             regCycles := 0.U
@@ -73,7 +78,6 @@ abstract class ReactorBase(p: PlatformWrapperParams)
 
       is (sRead) {
         when(dma.io.readDone) {
-          assert(pTopIn.io.outs(0).present, "[Reactor] DMA finished but top input port not present")
           scheduler.ioSchedulerCtrl.start.valid := true.B
           assert(scheduler.ioSchedulerCtrl.start.fire, "[Reactor] Reactor enter running state but scheduler not ready")
           regState := sRunning
@@ -82,16 +86,16 @@ abstract class ReactorBase(p: PlatformWrapperParams)
 
       is (sRunning) {
         when (scheduler.ioSchedulerCtrl.done) {
-
-          when(pTopOut.io.outs(0).present) {
+          val presents = outPorts.map{_.io.outs(0).present}
+          when(presents.reduce(_||_)) {
             dma.io.writeStart.valid := true.B
             dma.io.writeStart.bits.baseAddr := io.baseAddrRes
+            dma.io.writeStart.bits.present := presents
             assert(dma.io.writeStart.fire)
             regState := sWriteBack
           } otherwise {
             regState := sDone
           }
-
         }
       }
 
