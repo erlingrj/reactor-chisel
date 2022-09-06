@@ -1,5 +1,5 @@
 package reactor
-import reactor.lib._
+import reactor.examples._
 import fpgatidbits.PlatformWrapper._
 
 import java.nio.file.Paths
@@ -29,7 +29,7 @@ object ChiselMain {
     val targetDir: String = args(0)
 
     val platformInst = {f: (PlatformWrapperParams => GenericAccelerator) => new VerilatedTesterWrapper(f, targetDir)}
-    val accInst = {p: PlatformWrapperParams => new VaddReactor(p,5) }
+    val accInst = {p: PlatformWrapperParams => new VaddStreamReactor(p,5) }
 
     val verilogString = (new chisel3.stage.ChiselStage).emitVerilog(platformInst(accInst))
     Settings.writeVerilogToFile(verilogString, targetDir + "/TesterWrapper.v")

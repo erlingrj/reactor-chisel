@@ -24,6 +24,7 @@ case class PortIOConfig[+T <: Data](
   gen: T
 ) {
   def nAddrBits: Int = if (nElems > 1) log2Ceil(nElems) else 1
+  def nDataBits: Int = gen.getWidth
 }
 
 // PortIn is a antiDependency
