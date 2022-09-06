@@ -76,7 +76,7 @@ abstract class Port[T <: Data](c: PortConfig[T]) extends Module {
   }
 
   assert(!(io.in.en && io.evalEnd), "[Port.scala] reaction tries to write to port while scheduler says eval end")
-  assert(!(io.in.en && io.outs.map(_.addr =/= 0.U).reduce(_||_)), "Port.scala read and write to port at the same time")
+  assert(!(io.in.en && io.outs.map(_.en).reduce(_||_)), "Port.scala read and write to port at the same time")
 }
 
 

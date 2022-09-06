@@ -9,11 +9,11 @@ abstract class ReactionHls(c: ReactionConfig) extends Reaction(c) {
   def connectControlSignals(hlsCtrl: VitisHlsControlIO) = {
     hlsCtrl.clk := clock
     hlsCtrl.rst := !reactionEnable
-    hlsCtrl.start := false.B
+    hlsCtrl.start := reactionEnable
   }
 
   def makeControlAssertions(hlsCtrl: VitisHlsControlIO) = {
-    assert(!(reactionEnable && !hlsCtrl.ready), "[ReactionHls.scala] hlsReaction started but not ready")
+    assert(!(reactionEnable && !RegNext(reactionEnable) && !RegNext(hlsCtrl.idle)), s"[ReactionHls.scala] hlsReaction started but not ready")
   }
 
   def connectInPort(hlsIn: VitisHlsInputPort, portIn: PortOutIO[Data]) = {
