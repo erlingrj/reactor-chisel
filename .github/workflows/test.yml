@@ -5,7 +5,8 @@ on: [push, pull_request]
 jobs:
   ci:
     name: ci
-    runs-on: erlingrj/lf_chisel3
+    runs-on: ubuntu-latest
+    container: erlingrj/lf_chisel3
     steps:
       - name: Checkout
         uses: actions/checkout@v2
