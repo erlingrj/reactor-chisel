@@ -3,6 +3,29 @@ package reactor.examples
 import chisel3._
 import fpgatidbits.PlatformWrapper._
 import reactor._
+import reactor.lib._
+
+class VaddStreamReaction(c: ReactionConfig) extends ReactionStreaming(c) {
+
+  def reactionBody: Unit = {
+    val done = WireInit(false.B)
+
+    def add(in1: UInt, in2: UInt): UInt = {
+      in1+in2
+    }
+
+    val streamAdder = Module(new StreamJoin(UInt(8.W), UInt(8.W), UInt(8.W), add)).io
+    streamAdder.in1 <> triggerReader(0).out
+    streamAdder.in2 <> triggerReader(1).out
+    streamAdder.out <> antiDependencyWriter(0).in
+
+    when(antiDependencyWriter(0).done) {
+      done := true.B
+    }
+    reactionDone := done
+  }
+  reactionMain
+}
 
 class VaddStreamReactor(p: PlatformWrapperParams, vLen: Int = 10) extends ReactorBase(p) {
 
@@ -33,7 +56,8 @@ class VaddStreamReactor(p: PlatformWrapperParams, vLen: Int = 10) extends Reacto
   val r1_cfg = ReactionConfig(
     triggers = Array(in1_cfg.getPortIOConfig, in2_cfg.getPortIOConfig),
     dependencies = Array(),
-    antiDependencies = Array(out_cfg.getPortIOConfig)
+    antiDependencies = Array(out_cfg.getPortIOConfig),
+    states = Array()
   )
   val r1 = Module(new VaddStreamReaction(r1_cfg))
 
@@ -44,8 +68,9 @@ class VaddStreamReactor(p: PlatformWrapperParams, vLen: Int = 10) extends Reacto
   in2.io.outs(0) <> r1.io.triggers(1)
   out.io.in <> r1.io.antiDependencies(0)
 
-  override val inPorts = Seq(in1, in2)
-  override val outPorts = Seq(out)
+  override val inPorts = Array(in1, in2)
+  override val outPorts = Array(out)
+  override val states = Array()
 
   // Scheduler
   scheduler.ioReactionCtrl(0) <> r1.ioCtrl

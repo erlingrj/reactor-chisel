@@ -43,8 +43,9 @@ abstract class ReactorBase(p: PlatformWrapperParams)
 
   val dma: ReactorDMA
   val scheduler: Scheduler
-  val inPorts: Seq[Port[_ <: Data]]
-  val outPorts: Seq[Port[_ <: Data]]
+  val inPorts: Array[Port[_ <: Data]]
+  val outPorts: Array[Port[_ <: Data]]
+  val states: Array[ReactorState[_<:Data]]
 
   def connectScheduler2Ports = {
     (inPorts ++ outPorts).map(_.io.evalEnd := scheduler.ioSchedulerCtrl.done)
@@ -86,7 +87,7 @@ abstract class ReactorBase(p: PlatformWrapperParams)
 
       is (sRunning) {
         when (scheduler.ioSchedulerCtrl.done) {
-          val presents = outPorts.map{_.io.outs(0).present}
+          val presents = VecInit(outPorts.map{_.io.outs(0).present}.toSeq)
           when(presents.reduce(_||_)) {
             dma.io.writeStart.valid := true.B
             dma.io.writeStart.bits.baseAddr := io.baseAddrRes
@@ -107,6 +108,19 @@ abstract class ReactorBase(p: PlatformWrapperParams)
 
       is (sDone) {
         io.done := true.B
+        when (io.start) {
+          dma.io.readStart.valid := true.B
+          dma.io.readStart.bits.baseAddr := io.baseAddr
+          dma.io.readStart.bits.present := io.presentIn.asBools.take(inPorts.length)
+
+          assert(io.presentIn > 0.U, "Top Reactor started with no present input signals")
+
+          when (dma.io.readStart.fire) {
+            regCycles := 0.U
+            regState := sRead
+          }
+        }
+
       }
     }
 

@@ -29,6 +29,6 @@ class VitisHlsControlIO extends Bundle {
   val ready = Output(Bool())
 }
 
-abstract class BlackBoxVitisHls(c: ReactionConfig) extends BlackBox {
+abstract class BlackBoxVitisHls(c: ReactionConfig) extends BlackBox with HasBlackBoxResource {
 
 }

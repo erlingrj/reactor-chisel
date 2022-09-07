@@ -41,7 +41,7 @@ case class PortIOConfig[+T <: Data](
 }
 
 // PortIn is a antiDependency
-class PortInIO[+T <: Data](c: PortIOConfig[T]) extends Bundle {
+class PortInIO[T <: Data](c: PortIOConfig[T]) extends Bundle {
   val en = Input(Bool())
   val addr = Input(UInt(c.nAddrBits.W))
   val data = Input(c.gen)
@@ -51,10 +51,16 @@ class PortInIO[+T <: Data](c: PortIOConfig[T]) extends Bundle {
     addr := 0.U
    data := 0.U
   }
+
+  def write[T <: Data](address: UInt, dat: T) = {
+    en := true.B
+    addr := address
+    data := dat
+  }
 }
 
 // PortOut is a trigger/dependency
-class PortOutIO[+T <: Data](c: PortIOConfig[T]) extends Bundle {
+class PortOutIO[T <: Data](c: PortIOConfig[T]) extends Bundle {
   val present = Output(Bool())
   val addr = Input(UInt(c.nAddrBits.W))
   val en = Input(Bool())
@@ -63,6 +69,13 @@ class PortOutIO[+T <: Data](c: PortIOConfig[T]) extends Bundle {
   def reactionTieOff: Unit = {
     addr := 0.U
     en := false.B
+  }
+  def read(address: UInt) = {
+    en := true.B
+    addr := address
+  }
+  def readRsp: T = {
+    WireInit(data)
   }
 }
 

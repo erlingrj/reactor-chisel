@@ -1,38 +1,51 @@
 package reactor.examples
 
 import chisel3._
+import chisel3.util._
 import fpgatidbits.PlatformWrapper._
 import reactor._
+import reactor.lib._
 
-class vadd_hls_reactor(c: ReactionConfig) extends BlackBoxVitisHls(c) {
-  val io = IO(new Bundle {
-    val ap = new VitisHlsControlIO()
-    val in1 = new VitisHlsInputPort(c.triggers(0))
-    val in2 = new VitisHlsInputPort(c.triggers(1))
-    val out1 = new VitisHlsOutputPort(c.antiDependencies(0))
-  })
-  addResource("/HLS/VaddHlsDualPort/vadd_hls_reactor.v")
-  addResource("/HLS/VaddHlsDualPort/vadd_hls_reactor_flow_control_loop_pipe.v")
-}
+class StatefulReaction(c: ReactionConfig) extends Reaction(c) {
 
-class VaddHlsReaction(c: ReactionConfig) extends ReactionHls(c) {
+  val in1_cfg = PortIOConfig(nElems = 1, gen=UInt(8.W))
+  val in1 = io.triggers(0)
+  val in2 = io.triggers(1)
+  val out1 = io.antiDependencies(0)
 
-  val blackBoxHls = Module(new vadd_hls_reactor(c))
-  connectControlSignals(blackBoxHls.io.ap)
-  connectInPort(blackBoxHls.io.in1, io.triggers(0))
-  connectInPort(blackBoxHls.io.in2, io.triggers(1))
-  connectOutPort(blackBoxHls.io.out1, io.antiDependencies(0))
-
-  makeControlAssertions(blackBoxHls.io.ap)
+  val runningSum = ioState.states(0)
 
   def reactionBody: Unit = {
+
     val done = WireInit(false.B)
-    done := blackBoxHls.io.ap.done
+
+    val sRead :: sExec :: sDone :: Nil = Enum(3)
+    val regState = RegInit(sRead)
+    switch(regState) {
+      is (sRead) {
+        in1.read(0.U)
+        in2.read(0.U)
+        runningSum.read(0.U)
+        regState := sExec
+      }
+      is (sExec) {
+        // TODO: How can I avoid having to use asUInt here?
+        val sum = in1.readRsp.asUInt + in2.readRsp.asUInt + runningSum.readRsp.asUInt
+        out1.write(0.U, sum)
+        runningSum.write(0.U, sum)
+        regState := sDone
+      }
+      is (sDone) {
+        done := true.B
+      }
+    }
     reactionDone := done
   }
   reactionMain
 }
-class VaddHlsReactor(p: PlatformWrapperParams, vLen: Int = 10) extends ReactorBase(p) {
+
+
+class StatefulReactor(p: PlatformWrapperParams) extends ReactorBase(p) {
 
   // Schduler
   val schedulerConfig = SchedulerConfig(
@@ -44,27 +57,33 @@ class VaddHlsReactor(p: PlatformWrapperParams, vLen: Int = 10) extends ReactorBa
   // Port
   // Top->r1_in
   val in1_gen = UInt(8.W)
-  val in1_cfg = PortConfig(nElems = vLen,nReaders = 1,gen=in1_gen, useBram = false)
+  val in1_cfg = PortConfig(nElems = 1,nReaders = 1,gen=in1_gen, useBram = false)
   val in1 = Module(new Port(in1_cfg))
 
   val in2_gen = UInt(8.W)
-  val in2_cfg = PortConfig(nElems = vLen,nReaders = 1,gen=in2_gen, useBram = false)
+  val in2_cfg = PortConfig(nElems = 1,nReaders = 1,gen=in2_gen, useBram = false)
   val in2 = Module(new Port(in2_cfg))
 
   // r1_out1->r2_in2
   val out_gen = UInt(8.W)
-  val out_cfg = PortConfig(nElems = vLen,nReaders = 1, gen=out_gen, useBram = false)
+  val out_cfg = PortConfig(nElems = 1,nReaders = 1, gen=out_gen, useBram = false)
   val out = Module(new Port(out_cfg))
 
+  //s_runningSum
+  val runningSum_gen = UInt(8.W)
+  val runningSum_cfg = ReactorStateConfig(
+    nElems = 1, gen = runningSum_gen, useBram = false
+  )
+  val runningSum = Module(new ReactorState(runningSum_cfg))
 
   // Reactions
   val r1_cfg = ReactionConfig(
     triggers = Array(in1_cfg.getPortIOConfig, in2_cfg.getPortIOConfig),
     dependencies = Array(),
     antiDependencies = Array(out_cfg.getPortIOConfig),
-    states = Array()
+    states = Array(runningSum_cfg)
   )
-  val r1 = Module(new VaddHlsReaction(r1_cfg))
+  val r1 = Module(new StatefulReaction(r1_cfg))
 
 
   // Connections
@@ -73,9 +92,12 @@ class VaddHlsReactor(p: PlatformWrapperParams, vLen: Int = 10) extends ReactorBa
   in2.io.outs(0) <> r1.io.triggers(1)
   out.io.in <> r1.io.antiDependencies(0)
 
+  // States
+  runningSum.io <> r1.ioState.states(0)
+
   override val inPorts = Array(in1, in2)
   override val outPorts = Array(out)
-  override val states = Array()
+  override val states = Array(runningSum)
 
   // Scheduler
   scheduler.ioReactionCtrl(0) <> r1.ioCtrl

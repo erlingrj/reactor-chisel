@@ -9,7 +9,8 @@ import chisel3.experimental.DataMirror.directionOf
 case class ReactionConfig(
   triggers : Array[PortIOConfig[Data]],
   antiDependencies : Array[PortIOConfig[Data]],
-  dependencies : Array[PortIOConfig[Data]]
+  dependencies : Array[PortIOConfig[Data]],
+  states : Array[ReactorStateConfig[Data]]
 )
 
 
@@ -37,13 +38,21 @@ class ReactionPortIO(c: ReactionConfig) extends Bundle {
   val antiDependencies = MixedVec(Seq.tabulate(c.antiDependencies.length)(i => Flipped(new PortInIO(c.antiDependencies(i)))))
 }
 
+class ReactionStateIO(c: ReactionConfig) extends Bundle {
+  val states = MixedVec(Seq.tabulate(c.states.length)(i => Flipped(new ReactorStateIO(c.states(i)))))
+}
+
 abstract class Reaction(c: ReactionConfig) extends Module {
   val ioCtrl = IO(new ReactionCtrlIO())
   ioCtrl.tieOff
   val io = IO(new ReactionPortIO(c))
-  io.triggers.map(_.reactionTieOff)
-  io.dependencies.map(_.reactionTieOff)
-  io.antiDependencies.map(_.reactionTieOff)
+  io.triggers.foreach(_.reactionTieOff)
+  io.dependencies.foreach(_.reactionTieOff)
+  io.antiDependencies.foreach(_.reactionTieOff)
+
+  val ioState = IO(new ReactionStateIO(c))
+  ioState.states.foreach(_.tieOffExt)
+
 
   // Reset signal to reset all Registers in the reactionBody
   val reactionEnable = Wire(Bool())
