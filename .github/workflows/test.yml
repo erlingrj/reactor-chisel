@@ -6,11 +6,18 @@ jobs:
   ci:
     name: ci
     runs-on: ubuntu-latest
-    container: erlingrj/lf_chisel3
     steps:
       - name: Checkout
         uses: actions/checkout@v2
         with:
             submodules: recursive
+      - name: Setup Scala
+        uses: olafurpg/setup-scala@v10
+        with:
+          java-version: adopt@1.8
+      - name: Cache Scala
+        uses: coursier/cache-action@v5
+      - name: Install verilator
+        uses: drom/action-verilator@v0.1.11
       - name: SBT Test
         run: sbt test
