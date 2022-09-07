@@ -12,7 +12,7 @@ class vadd_hls_reactor(c: ReactionConfig) extends BlackBoxVitisHls(c) with HasBl
     val out1 = new VitisHlsOutputPort(c.antiDependencies(0))
   })
   addResource("/HLS/VaddHlsDualPort/vadd_hls_reactor.v")
- // addResource("/HLS/VaddHlsDualPort/vadd_hls_reactor_flow_control_loop_pipe.v")
+  addResource("/HLS/VaddHlsDualPort/vadd_hls_reactor_flow_control_loop_pipe.v")
 }
 
 class VaddHlsReaction(c: ReactionConfig) extends ReactionHls(c) {
