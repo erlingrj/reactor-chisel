@@ -18,6 +18,6 @@ jobs:
       - name: Cache Scala
         uses: coursier/cache-action@v5
       - name: Install verilator
-            run: apt install verilator -y
+        run: apt install verilator -y
       - name: SBT Test
         run: sbt test
