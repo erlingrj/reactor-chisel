@@ -42,8 +42,6 @@ case class SchedulerConfig(
     val n = schedule.flatten.count(_ == i)
     require(n == 1, s"[Scheduler.scala] Illegal schedule contains $n occurrences of reaction $i")
   }
-
-  println(s"Schedule length=$schedLen\nSchedule bits=$schedLenBits\nScheduleBits=$schedBits")
 }
 
 class SchedulerCtrlIO extends Bundle {

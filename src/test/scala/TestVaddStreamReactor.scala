@@ -52,8 +52,6 @@ class TestVaddStreamReactor extends AnyFlatSpec with ChiselScalatestTester {
 
       for ((numIn1, numIn2) <- numIns1 zip numIns2) {
         val numOut = numIn1 zip numIn2 map {case(l,r) => l+r}
-        println(numIn1)
-        println(numIn2)
         c.arrayToMem(0, numIn1.map(_.U) ++ numIn2.map(_.U))
         c.start(baseAddr, baseAddrRes, present)
         c.waitForDone
