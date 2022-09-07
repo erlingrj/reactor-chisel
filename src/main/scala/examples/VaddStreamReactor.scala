@@ -16,17 +16,17 @@ class VaddStreamReactor(p: PlatformWrapperParams, vLen: Int = 10) extends Reacto
   // Port
   // Top->r1_in
   val in1_gen = UInt(8.W)
-  val in1_cfg = PortConfig(nElems = vLen,nReaders = 1,gen=in1_gen)
-  val in1 = Module(new RegPort(in1_cfg))
+  val in1_cfg = PortConfig(nElems = vLen,nReaders = 1,gen=in1_gen, useBram = false)
+  val in1 = Module(new Port(in1_cfg))
 
   val in2_gen = UInt(8.W)
-  val in2_cfg = PortConfig(nElems = vLen,nReaders = 1,gen=in2_gen)
-  val in2 = Module(new RegPort(in2_cfg))
+  val in2_cfg = PortConfig(nElems = vLen,nReaders = 1,gen=in2_gen, useBram = false)
+  val in2 = Module(new Port(in2_cfg))
 
   // r1_out1->r2_in2
   val out_gen = UInt(8.W)
-  val out_cfg = PortConfig(nElems = vLen,nReaders = 1, gen=out_gen)
-  val out = Module(new RegPort(out_cfg))
+  val out_cfg = PortConfig(nElems = vLen,nReaders = 1, gen=out_gen, useBram = false)
+  val out = Module(new Port(out_cfg))
 
 
   // Reactions

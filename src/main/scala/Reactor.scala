@@ -43,8 +43,8 @@ abstract class ReactorBase(p: PlatformWrapperParams)
 
   val dma: ReactorDMA
   val scheduler: Scheduler
-  val inPorts: Seq[_ <: Port[_ <: Data]]
-  val outPorts: Seq[_ <: Port[_ <: Data]]
+  val inPorts: Seq[Port[_ <: Data]]
+  val outPorts: Seq[Port[_ <: Data]]
 
   def connectScheduler2Ports = {
     (inPorts ++ outPorts).map(_.io.evalEnd := scheduler.ioSchedulerCtrl.done)

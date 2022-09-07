@@ -9,14 +9,27 @@ import chisel3.experimental.DataMirror
  *  OutputPort
  */
 
-
 // TODO: The difference between PortConfig and PortIOConfig is not that clear. Revisit
 case class PortConfig[T <: Data](
   nElems: Int,
   nReaders: Int,
-  gen: T
+  gen: T,
+  useBram: Boolean,
 ) {
-  def getPortIOConfig: PortIOConfig[T] = PortIOConfig(nElems,gen)
+  def getPortIOConfig: PortIOConfig[T] = {
+    PortIOConfig(
+      gen = gen,
+      nElems = nElems
+    )
+  }
+  def getMemConfig: MemoryConfig[T] = {
+    MemoryConfig(
+      gen = gen,
+      nElems=nElems,
+      nReadPorts = nReaders,
+      nWritePorts = 1
+    )
+  }
 }
 
 case class PortIOConfig[+T <: Data](
@@ -59,11 +72,29 @@ class PortIO[T <: Data](c: PortConfig[T]) extends Bundle {
   val evalEnd = Input(Bool())
 }
 
-abstract class Port[T <: Data](c: PortConfig[T]) extends Module {
+class Port[T <: Data](c: PortConfig[T]) extends Module {
+  require(!c.useBram)
   val io = IO(new PortIO(c))
 
   val regPresent = RegInit(false.B)
   io.outs.map(_.present := regPresent)
+
+  // A port contains an memory (which can be Register-based or BRAM based)
+  val mem: Memory[T] =
+    if (c.useBram) Module(new MemoryBram(c.getMemConfig))
+    else Module(new MemoryReg(c.getMemConfig))
+
+  mem.io.read zip io.outs foreach {
+    case (m,p) => {
+      m.en := p.en
+      m.addr := p.addr
+      p.data := m.data
+  }}
+
+  mem.io.write(0).data := io.in.data
+  mem.io.write(0).en := io.in.en
+  mem.io.write(0).addr := io.in.addr
+
 
   // When something is written to the Port we should output the present signal
   when(io.in.en) {
@@ -78,34 +109,3 @@ abstract class Port[T <: Data](c: PortConfig[T]) extends Module {
   assert(!(io.in.en && io.evalEnd), "[Port.scala] reaction tries to write to port while scheduler says eval end")
   assert(!(io.in.en && io.outs.map(_.en).reduce(_||_)), "Port.scala read and write to port at the same time")
 }
-
-
-class BramPort[T <: Data](c: PortConfig[T]) extends Port[T](c) {
-
-}
-
-class DramPort[T <: Data](c: PortConfig[T]) extends Port[T](c) {
-
-}
-
-class RegPort[T <: Data](c: PortConfig[T]) extends Port[T](c) {
-
-  val data = RegInit(VecInit(Seq.fill(c.nElems)(0.U.asTypeOf(c.gen))))
-  val readBufs = RegInit(VecInit(Seq.fill(c.nReaders)(0.U.asTypeOf(c.gen))))
-
-  // Reading
-  io.outs zip readBufs map({ case (port, buf) => port.data := buf })
-
-  for (readIdx <- 0 until c.nReaders) {
-    when (io.outs(readIdx).en) {
-      readBufs(readIdx) := data(io.outs(readIdx).addr)
-    }
-  }
-
-  // Writing
-  when(io.in.en) {
-    data(io.in.addr) := io.in.data
-  }
-}
-
-
