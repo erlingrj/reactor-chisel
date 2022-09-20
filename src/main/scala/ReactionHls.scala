@@ -29,5 +29,15 @@ abstract class ReactionHls(c: ReactionConfig) extends Reaction(c) {
     portOut.data := hlsOut.d0
   }
 
+  def connectStatePort(hlsState: VitisHlsStateInOutPort, statePort: ReactorStateIO[Data]) = {
+    statePort.readPort.addr := hlsState.address0
+    statePort.readPort.en := hlsState.ce0
+    hlsState.q0 := statePort.readPort.addr
+
+    statePort.writePort.addr := hlsState.address1
+    statePort.writePort.en := hlsState.we1
+    hlsState.d1 := statePort.writePort.data
+  }
+
   val blackBoxHls: BlackBoxVitisHls
 }

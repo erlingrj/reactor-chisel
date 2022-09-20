@@ -17,6 +17,15 @@ class VitisHlsOutputPort(p: PortIOConfig[Data]) extends Bundle {
   val we0 = Output(Bool())
   val d0 = Output(UInt(p.nDataBits.W))
 }
+class VitisHlsStateInOutPort(p: ReactorStateConfig[Data]) extends Bundle {
+  val address0 = Output(UInt(p.nAddrBits.W))
+  val ce0 = Output(Bool())
+  val q0 = Output(UInt(p.nDataBits.W))
+  val address1 = Output(UInt(p.nAddrBits.W))
+  val ce1 = Output(Bool())
+  val we1 = Output(Bool())
+  val d1 = Output(UInt(p.nDataBits.W))
+}
 
 class VitisHlsControlIO extends Bundle {
   val local_block = Output(Bool())

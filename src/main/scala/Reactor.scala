@@ -30,8 +30,6 @@ class ReactorIO extends Bundle {
   }
 }
 
-// TODO: Make static check of: nPorts (vs 32 is the max number of presence signals)
-// TODO: require that the output ports only have 1 reader
 abstract class ReactorBase(p: PlatformWrapperParams)
   extends GenericAccelerator(p) {
 
@@ -51,7 +49,10 @@ abstract class ReactorBase(p: PlatformWrapperParams)
     (inPorts ++ outPorts).map(_.io.evalEnd := scheduler.ioSchedulerCtrl.done)
   }
 
-
+  def requirements(): Unit = {
+    require(inPorts.length < 32, "[ReactorBase] Top level reactor can max have 32 input ports")
+    require(outPorts.length < 32, "[ReactorBase] Top level reactor can max have 32 output ports")
+  }
   // Top-level state machine
   val sIdle :: sRead :: sRunning :: sWriteBack :: sDone :: Nil = Enum(5)
   val regState = RegInit(sIdle)

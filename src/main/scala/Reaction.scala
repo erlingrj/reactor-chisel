@@ -60,6 +60,7 @@ abstract class Reaction(c: ReactionConfig) extends Module {
   val reactionDone = Wire(Bool())
   reactionDone := false.B
 
+  // TODO: reactionBody should return Bool saying whether it is done or not
   def reactionBody: Unit
 
   val sIdle :: sRunning :: sDone :: Nil = Enum(3)
@@ -78,9 +79,16 @@ abstract class Reaction(c: ReactionConfig) extends Module {
         regCycles := 0.U
 
         when(ioCtrl.enable.valid) {
-          // TODO: Should check wether there are data in the port
-          regStateTop := sRunning
           ioCtrl.enable.ready := true.B
+          // If there is data present at any port go to running.
+          when(io.triggers.map(_.present).reduce(_||_)) {
+            regStateTop := sRunning
+          } otherwise {
+            // If there is nothing at the trigger ports, then
+            //  go directly done
+            regStateTop := sDone
+          }
+
         }
       }
 
@@ -109,5 +117,4 @@ abstract class Reaction(c: ReactionConfig) extends Module {
 
   assert(!(regCycles > 200.U), "[Reaction] Reaction was running for over 200cc assumed error")
 }
-// TODO: Handle the detection of reaction finished here
 
