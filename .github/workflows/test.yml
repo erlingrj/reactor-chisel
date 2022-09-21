@@ -17,5 +17,7 @@ jobs:
           java-version: adopt@1.8
       - name: Cache Scala
         uses: coursier/cache-action@v5
+      - name: Install verilator
+        run: sudo apt install verilator -y
       - name: SBT Test
         run: sbt test

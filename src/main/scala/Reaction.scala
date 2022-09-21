@@ -9,7 +9,8 @@ import chisel3.experimental.DataMirror.directionOf
 case class ReactionConfig(
   triggers : Array[PortIOConfig[Data]],
   antiDependencies : Array[PortIOConfig[Data]],
-  dependencies : Array[PortIOConfig[Data]]
+  dependencies : Array[PortIOConfig[Data]],
+  states : Array[ReactorStateConfig[Data]]
 )
 
 
@@ -37,13 +38,21 @@ class ReactionPortIO(c: ReactionConfig) extends Bundle {
   val antiDependencies = MixedVec(Seq.tabulate(c.antiDependencies.length)(i => Flipped(new PortInIO(c.antiDependencies(i)))))
 }
 
+class ReactionStateIO(c: ReactionConfig) extends Bundle {
+  val states = MixedVec(Seq.tabulate(c.states.length)(i => Flipped(new ReactorStateIO(c.states(i)))))
+}
+
 abstract class Reaction(c: ReactionConfig) extends Module {
   val ioCtrl = IO(new ReactionCtrlIO())
   ioCtrl.tieOff
   val io = IO(new ReactionPortIO(c))
-  io.triggers.map(_.reactionTieOff)
-  io.dependencies.map(_.reactionTieOff)
-  io.antiDependencies.map(_.reactionTieOff)
+  io.triggers.foreach(_.reactionTieOff)
+  io.dependencies.foreach(_.reactionTieOff)
+  io.antiDependencies.foreach(_.reactionTieOff)
+
+  val ioState = IO(new ReactionStateIO(c))
+  ioState.states.foreach(_.tieOffExt)
+
 
   // Reset signal to reset all Registers in the reactionBody
   val reactionEnable = Wire(Bool())
@@ -51,6 +60,7 @@ abstract class Reaction(c: ReactionConfig) extends Module {
   val reactionDone = Wire(Bool())
   reactionDone := false.B
 
+  // TODO: reactionBody should return Bool saying whether it is done or not
   def reactionBody: Unit
 
   val sIdle :: sRunning :: sDone :: Nil = Enum(3)
@@ -69,9 +79,16 @@ abstract class Reaction(c: ReactionConfig) extends Module {
         regCycles := 0.U
 
         when(ioCtrl.enable.valid) {
-          // TODO: Should check wether there are data in the port
-          regStateTop := sRunning
           ioCtrl.enable.ready := true.B
+          // If there is data present at any port go to running.
+          when(io.triggers.map(_.present).reduce(_||_)) {
+            regStateTop := sRunning
+          } otherwise {
+            // If there is nothing at the trigger ports, then
+            //  go directly done
+            regStateTop := sDone
+          }
+
         }
       }
 
@@ -100,44 +117,4 @@ abstract class Reaction(c: ReactionConfig) extends Module {
 
   assert(!(regCycles > 200.U), "[Reaction] Reaction was running for over 200cc assumed error")
 }
-// TODO: Handle the detection of reaction finished here
 
-// TODO: What happpens if the Reaction is finished without consuming all the data in the reader queues?
-abstract class ReactionStreaming(c: ReactionConfig) extends Reaction(c) {
-  val triggerReader = Array.tabulate(c.triggers.length)(i => Module(new PortStreamReader(c.triggers(i))).io)
-  val dependencyReader = Array.tabulate(c.dependencies.length)(i => Module(new PortStreamReader(c.dependencies(i))).io)
-  val antiDependencyWriter = Array.tabulate(c.antiDependencies.length)(i => Module(new PortStreamWriter(c.antiDependencies(i))).io)
-  triggerReader.foreach(_.tieOffExt())
-  dependencyReader.foreach(_.tieOffExt())
-  antiDependencyWriter.foreach(_.tieOffExt())
-
-  // Connect the streaming readers and writers
-  io.triggers zip triggerReader foreach {case (port, reader) => port <> reader.portRead}
-  io.dependencies zip dependencyReader foreach {case (port, reader) => port <> reader.portRead}
-  io.antiDependencies zip antiDependencyWriter foreach {case (port, writer) => port <> writer.portWrite}
-
-  // Start the streaming readers when the reaction is enabled
-  val streamIdle :: streamReading :: Nil = Enum(2)
-  val regStreamState = RegInit(streamIdle)
-
-  switch(regStreamState) {
-    is (streamIdle) {
-      when (regStateTop === sRunning) {
-        // Start the streaming readers if there is data.
-        for (rdr <- triggerReader ++ dependencyReader) {
-          when(rdr.portRead.present) {
-            rdr.start.valid := true.B
-            assert(rdr.start.fire)
-          }
-        }
-        regStreamState := streamReading
-      }
-    }
-
-    is (streamReading) {
-      when(reactionDone) {
-        regStreamState := streamIdle
-      }
-    }
-  }
-}
