@@ -9,11 +9,13 @@ import reactor.lib._
 class StatefulReaction(c: ReactionConfig) extends Reaction(c) {
 
   val in1_cfg = PortIOConfig(nElems = 1, gen=UInt(8.W))
-  val in1 = io.triggers(0)
-  val in2 = io.triggers(1)
-  val out1 = io.antiDependencies(0)
+  val in1 = io.triggers(0).asInstanceOf[PortOutIO[UInt]]
 
-  val runningSum = ioState.states(0)
+  val in2_cfg = PortIOConfig(nElems = 1, gen=UInt(8.W))
+  val in2 = io.triggers(1).asInstanceOf[PortOutIO[UInt]]
+  val out1 = io.antiDependencies(0).asInstanceOf[PortInIO[UInt]]
+
+  val runningSum = ioState.states(0).asInstanceOf[ReactorStateIO[UInt]]
 
   def reactionBody: Unit = {
 
@@ -29,8 +31,7 @@ class StatefulReaction(c: ReactionConfig) extends Reaction(c) {
         regState := sExec
       }
       is (sExec) {
-        // TODO: How can I avoid having to use asUInt here?
-        val sum = in1.readRsp.asUInt + in2.readRsp.asUInt + runningSum.readRsp.asUInt
+        val sum = in1.readRsp + in2.readRsp + runningSum.readRsp
         out1.write(0.U, sum)
         runningSum.write(0.U, sum)
         regState := sDone

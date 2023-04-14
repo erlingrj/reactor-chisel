@@ -7,7 +7,6 @@ import fpgatidbits.dma._
 
 import scala.collection.mutable.ArrayBuffer
 
-
 case class ReactorDMAConfig(
   inPorts : Array[PortIOConfig[Data]],
   outPorts : Array[PortIOConfig[Data]],
@@ -17,7 +16,6 @@ case class ReactorDMAConfig(
   require( outPorts.length > 0 && outPorts.length < 256)
   require( inPorts.map(_.gen.getWidth <= mrp.dataWidth).reduce(_&&_), "All top-level ports must have width less than system data width")
   require( outPorts.map(_.gen.getWidth <= mrp.dataWidth).reduce(_&&_), "All top-level ports must have width less than system data width")
-
 
   def maxInWidth: Int = {
     var max = 0
@@ -169,8 +167,6 @@ class ReactorDMA(c: ReactorDMAConfig) extends Module {
   val regRdByteCount = RegInit(0.U(32.W))
   val regRdTxCnt = RegInit(0.U(c.nInPortsBits.W))
 
-
-
   // Connect MemStreamReader/Writer to the memory port
   memStreamReader.rsp <> io.memPort.memRdRsp
   memStreamReader.req <> io.memPort.memRdReq
@@ -220,7 +216,6 @@ class ReactorDMA(c: ReactorDMAConfig) extends Module {
           assert(regRdTxInfo.present(regRdTxCnt))
           regReadState := sWaiting
         }
-
       } otherwise {
         when (regRdTxCnt === (c.nInPorts-1).U) {
           regReadState := sDone
@@ -228,7 +223,6 @@ class ReactorDMA(c: ReactorDMAConfig) extends Module {
           regRdTxCnt := regRdTxCnt + 1.U
         }
       }
-
     }
 
     is (sWaiting) {
@@ -261,7 +255,6 @@ class ReactorDMA(c: ReactorDMAConfig) extends Module {
   // Connect memStreamReader and portStreamReader based on the loop iterator
   memStreamWriter.in <> portStreamReadersOut(regWrTxCnt)
 
-
   // Writing FSM
   // Start in Idle and ready. Then when triggered it goes to Running->Waiting->Running until all data
   // is written to shared mem
@@ -274,8 +267,6 @@ class ReactorDMA(c: ReactorDMAConfig) extends Module {
         regWrTxCnt := 0.U
       }
     }
-
-
     is (sRunning) {
       when (regWrTxInfo.present(regWrTxCnt)) {
         portStreamReadersStart(regWrTxCnt).valid := true.B
@@ -289,7 +280,6 @@ class ReactorDMA(c: ReactorDMAConfig) extends Module {
         }
       }
     }
-
     is (sWaiting) {
       assert(regWrTxInfo.present(regWrTxCnt))
       memStreamWriter.baseAddr := c.outBaseAddrs(regWrTxInfo.baseAddr)(regWrTxCnt)
@@ -332,7 +322,6 @@ class ReactorDMAWithMem(c: ReactorDMAConfig) extends Module {
 
   val ioMem = IO(new TestMemAccessIO(c.mrp))
 
-
   val testMem = Module(new TesterMemoryWrapper(c.mrp, 1))
   val reactorDma = Module(new ReactorDMA(c))
   reactorDma.io.memPort <> testMem.accio.memPort(0)
@@ -345,6 +334,4 @@ class ReactorDMAWithMem(c: ReactorDMAConfig) extends Module {
   io.writeDone := reactorDma.io.writeDone
 
   ioMem <> testMem.verio
-
-
 }

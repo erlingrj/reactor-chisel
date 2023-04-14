@@ -79,6 +79,9 @@ class PortOutIO[T <: Data](c: PortIOConfig[T]) extends Bundle {
   }
 }
 
+
+
+
 class PortIO[T <: Data](c: PortConfig[T]) extends Bundle {
   val in = new PortInIO(c.getPortIOConfig)
   val outs = Vec(c.nReaders, new PortOutIO(c.getPortIOConfig))
