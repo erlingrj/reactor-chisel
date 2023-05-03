@@ -1,127 +1,131 @@
 package reactor
 
 import chisel3._
+import chisel3.internal.firrtl.Width
 import chisel3.util._
-import chisel3.experimental.DataMirror
 
-/**
- *  Ports are what connects Reactors to Reactor
- *  OutputPort
- */
 
-// TODO: The difference between PortConfig and PortIOConfig is not that clear. Revisit
-case class PortConfig[T <: Data](
-  nElems: Int,
-  nReaders: Int,
-  gen: T,
-  useBram: Boolean,
-) {
-  def getPortIOConfig: PortIOConfig[T] = {
-    PortIOConfig(
-      gen = gen,
-      nElems = nElems
-    )
+abstract class ReactorPortIO[T <: Token] extends Bundle {
+
+}
+case class InputPortConfig[T <: Token] (
+                                   gen: T,
+                                   nReaders: Int
+                                 ) {
+  def nReadersWidth = if (nReaders == 1) 1.W else log2Ceil(nReaders).W
+}
+class InputPortIO[T <: Token](c: InputPortConfig[T]) extends ReactorPortIO[T] {
+  val inward = Vec(c.nReaders, new EventReadSlave(c.gen))
+  val outward = new EventReadMaster(c.gen)
+
+  def driveDefaults(): Unit = {
+    inward.foreach(_.driveDefaults())
+    outward.driveDefaults()
   }
-  def getMemConfig: MemoryConfig[T] = {
-    MemoryConfig(
-      gen = gen,
-      nElems=nElems,
-      nReadPorts = nReaders,
-      nWritePorts = 1
-    )
+
+  def plugInwards(): Unit = {
+    inward.foreach(i => {
+      i.fire := false.B
+    })
+  }
+
+}
+
+class InputPort[T <: Token](c: InputPortConfig[T]) extends Module {
+  val io = IO(new InputPortIO(c))
+  assert(!(io.outward.fire && io.outward.resp.valid), "[Event.scala] Reader asserted `fire` while `valid` was false")
+  io.driveDefaults()
+  io.inward.foreach(_ <> io.outward)
+
+  // If we only have a single reader, then we just pass through the signal.
+  // If there are more readers we do a state machine to control when the eat
+  // signal is sent.
+  if (c.nReaders > 1) {
+    io.outward.fire:= false.B
+
+    val regCount = RegInit(0.U(c.nReadersWidth))
+    for (i <- 0 until c.nReaders) {
+      when(io.inward(i).fire) {
+        regCount := regCount + 1.U
+      }
+    }
+    when(regCount === c.nReaders.U) {
+      io.outward.fire:= true.B
+      regCount := 0.U
+    }
+  }
+
+  var downstreamIdx = 0
+  def connectDownstream(d: EventReadMaster[T]): Unit = {
+    io.inward(downstreamIdx) <> d
+    downstreamIdx += 1
+  }
+
+  var upstreamConnected = false
+  def connectUpstream(up: EventReadMaster[T]) = {
+    require(!upstreamConnected, "[Port.scala] connectUpstream called twice on InputPort")
+    io.outward <> up
+    upstreamConnected = true
   }
 }
 
-case class PortIOConfig[+T <: Data](
-  nElems: Int,
-  gen: T
-) {
-  def nAddrBits: Int = if (nElems > 1) log2Ceil(nElems) else 1
-  def nDataBits: Int = gen.getWidth
+case class OutputPortConfig[T <: Token](
+                                      gen: T,
+                                      nWriters: Int
+                                      ) {
+  def nWritersWidth: Width = if (nWriters == 1) 1.W else log2Ceil(nWriters).W
 }
+class OutputPortIO[T <: Token](c: OutputPortConfig[T]) extends ReactorPortIO[T] {
+  val inward = Vec(c.nWriters, new EventWriteSlave(c.gen))
+  val outward = new EventWriteMaster(c.gen)
 
-// PortIn is a antiDependency
-class PortInIO[T <: Data](c: PortIOConfig[T]) extends Bundle {
-  val en = Input(Bool())
-  val addr = Input(UInt(c.nAddrBits.W))
-  val data = Input(c.gen)
-
-  def reactionTieOff: Unit = {
-    en := false.B
-    addr := 0.U
-   data := 0.U
+  def driveDefaults(): Unit = {
+    inward.foreach(_.driveDefaults())
+    outward.driveDefaults()
   }
 
-  def write[T <: Data](address: UInt, dat: T) = {
-    en := true.B
-    addr := address
-    data := dat
-  }
-}
-
-// PortOut is a trigger/dependency
-class PortOutIO[T <: Data](c: PortIOConfig[T]) extends Bundle {
-  val present = Output(Bool())
-  val addr = Input(UInt(c.nAddrBits.W))
-  val en = Input(Bool())
-  val data = Output(c.gen)
-
-  def reactionTieOff: Unit = {
-    addr := 0.U
-    en := false.B
-  }
-  def read(address: UInt) = {
-    en := true.B
-    addr := address
-  }
-  def readRsp: T = {
-    WireInit(data)
+  def plugInwards(): Unit = {
+    inward.foreach(i => {
+      i.fire := false.B
+      i.req.valid := false.B
+      i.req.token := 0.U.asTypeOf(i.req.token)
+      i.req.present := false.B
+    })
   }
 }
 
+class OutputPort[T <: Token](c: OutputPortConfig[T]) extends Module {
+  val io = IO(new OutputPortIO(c))
+  io.driveDefaults()
 
 
+  val regCount = RegInit(0.U(c.nWritersWidth))
 
-class PortIO[T <: Data](c: PortConfig[T]) extends Bundle {
-  val in = new PortInIO(c.getPortIOConfig)
-  val outs = Vec(c.nReaders, new PortOutIO(c.getPortIOConfig))
-  val evalEnd = Input(Bool())
-}
-
-class Port[T <: Data](c: PortConfig[T]) extends Module {
-  require(!c.useBram)
-  val io = IO(new PortIO(c))
-
-  val regPresent = RegInit(false.B)
-  io.outs.map(_.present := regPresent)
-
-  // A port contains an memory (which can be Register-based or BRAM based)
-  val mem: Memory[T] =
-    if (c.useBram) Module(new MemoryBram(c.getMemConfig))
-    else Module(new MemoryReg(c.getMemConfig))
-
-  mem.io.read zip io.outs foreach {
-    case (m,p) => {
-      m.en := p.en
-      m.addr := p.addr
-      p.data := m.data
-  }}
-
-  mem.io.write(0).data := io.in.data
-  mem.io.write(0).en := io.in.en
-  mem.io.write(0).addr := io.in.addr
-
-
-  // When something is written to the Port we should output the present signal
-  when(io.in.en) {
-    regPresent := true.B
+  for (i <- 0 until c.nWriters) {
+    when (io.inward(i).req.valid) {
+      io.inward(i) <> io.outward
+      when (io.inward(i).fire) {
+        regCount := regCount + 1.U
+      }
+    }
   }
 
-  // When we reach the end of an evaluation cycle. Scheduler will signal evalEnd to all Ports to reset present signal
-  when(io.evalEnd) {
-    regPresent := false.B
+  io.outward.fire := false.B
+  when(regCount === c.nWriters.U) {
+    io.outward.fire := true.B
+    regCount := 0.U
   }
 
-  assert(!(io.in.en && io.evalEnd), "[Port.scala] reaction tries to write to port while scheduler says eval end")
-  assert(!(io.in.en && io.outs.map(_.en).reduce(_||_)), "Port.scala read and write to port at the same time")
+  var upstreamIdx = 0
+  def connectUpstream(up: EventWriteMaster[T]) = {
+    io.inward(upstreamIdx) <> up
+    upstreamIdx += 1
+  }
+
+  var downstreamConnected = false
+  def connectDownstream(down: EventWriteMaster[T]) = {
+    require(!downstreamConnected)
+    io.outward <> down
+    downstreamConnected = true
+  }
 }
