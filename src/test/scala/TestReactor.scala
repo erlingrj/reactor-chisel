@@ -1,51 +1,81 @@
 package reactor.test
+
+import reactor.examples._
 import reactor._
 import chisel3._
 import org.scalatest._
 import chiseltest._
 import chisel3.experimental.BundleLiterals._
 import chisel3.util._
+import chiseltest.simulator.WriteVcdAnnotation
 import org.scalatest.flatspec.AnyFlatSpec
 
 
 
-class Reactor1 extends Reactor {
-  val gen = new SingleToken(UInt(8.W))
-  class Reactor1IO extends ReactorIO {
-    val in = Vec(1, new EventReadMaster(gen))
-    val out = new EventWriteMaster(gen)
-  }
-  val io = IO(new Reactor1IO)
-  val r1 = Module(new ReactionAddN(1))
-  val r2 = Module(new ReactionAddN(2))
-
-  val in = Module(new InputPort(InputPortConfig(gen, 2)))
-  val out = Module(new OutputPort(OutputPortConfig(gen, 2)))
-
-  in.connectDownstream(r1.io.in)
-  in.connectDownstream(r2.io.in)
-  in.connectUpstream(io.in(0))
-
-  out.connectUpstream(r1.io.out)
-  out.connectUpstream(r2.io.out)
-  out.connectDownstream(io.out)
-
-  override val reactions = Seq(r1, r2)
-  override val inPorts = Seq(in)
-  override val outPorts = Seq(out)
-}
 class TestReactor extends AnyFlatSpec with ChiselScalatestTester {
-
-
-  behavior of "ExampleReactor"
+  behavior of "Reactor1"
   it should "initialize" in {
-    test(new Reactor1) {c =>
+    test(new DualAddN) { c =>
       implicit val clk = c.clock
     }
   }
   it should "Respect precedence" in {
-    test(new Reactor1) { c =>
+    test(new DualAddN).withAnnotations(Seq(WriteVcdAnnotation)) { c =>
       implicit val clk = c.clock
+      fork {
+        ReactorSim.readSlave(c.io.in(0), 42.U)
+      }.fork.withRegion(Monitor) {
+        ReactorSim.writeSlave(c.io.out, 43.U, fire=false)
+        ReactorSim.writeSlave(c.io.out, 44.U)
+      }.joinAndStep(clk)
+
+    }
+  }
+
+  behavior of "Reactor2"
+  it should "initialize" in {
+    test(new DualWithContained) { c =>
+      implicit val clk = c.clock
+    }
+  }
+
+  it should "Respect precedence" in {
+    test(new DualWithContained).withAnnotations(Seq(WriteVcdAnnotation)) { c =>
+      implicit val clk = c.clock
+      fork {
+        ReactorSim.readSlave(c.io.in(0), 42.U)
+      }.fork {
+        ReactorSim.readSlave(c.io.in(1), 42.U)
+      }.fork.withRegion(Monitor) {
+        ReactorSim.writeSlave(c.io.out1, 45.U, fire = false)
+        ReactorSim.writeSlave(c.io.out1, 46.U)
+      }.fork.withRegion(Monitor) {
+        ReactorSim.writeSlave(c.io.out2, 43.U, fire = false)
+        ReactorSim.writeSlave(c.io.out2, 44.U)
+      }.joinAndStep(clk)
+    }
+  }
+  behavior of "Reactor3"
+  it should "initialize" in {
+    test(new DualDataflow) { c =>
+      implicit val clk = c.clock
+    }
+  }
+
+  it should "Respect precedence" in {
+    test(new DualDataflow).withAnnotations(Seq(WriteVcdAnnotation)) { c =>
+      implicit val clk = c.clock
+      fork {
+        ReactorSim.readSlave(c.io.in(0), 42.U)
+      }.fork {
+        ReactorSim.readSlave(c.io.in(1), 42.U)
+      }.fork.withRegion(Monitor) {
+        ReactorSim.writeSlave(c.io.out1, 47.U, fire=false)
+        ReactorSim.writeSlave(c.io.out1, 48.U)
+      }.fork.withRegion(Monitor) {
+        ReactorSim.writeSlave(c.io.out2, 45.U, fire=false)
+        ReactorSim.writeSlave(c.io.out2, 46.U)
+      }.joinAndStep(clk)
     }
   }
 }

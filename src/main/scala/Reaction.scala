@@ -3,12 +3,19 @@ package reactor
 import chisel3._
 import chisel3.util._
 
+import scala.collection.mutable.ArrayBuffer
 
+import reactor.Reaction._
 case class ReactionConfig(
-                         nPrecedenceIn: Int,
-                         nPrecedenceOut: Int
+                         nPrecedenceIn: Int = 0,
+                         nPrecedenceOut: Int = 0
                          )
 abstract class ReactionIO() extends Bundle {}
+
+// FIXME: Hide behind global debug?
+class ReactionStatusIO extends Bundle {
+  val state = Output(UInt(4.W))
+}
 
 class ReactionPrecedencePorts(c: ReactionConfig) extends Bundle {
   val precedenceIn = Vec(c.nPrecedenceIn, new EventReadMaster(new PureToken))
@@ -22,6 +29,7 @@ class ReactionPrecedencePorts(c: ReactionConfig) extends Bundle {
 abstract class Reaction(val c: ReactionConfig = ReactionConfig(0,0)) extends Module {
   val io: ReactionIO
   val precedenceIO = IO(new ReactionPrecedencePorts(c))
+  val statusIO = IO(new ReactionStatusIO())
 
   val triggers: Seq[EventReadMaster[_ <: Token]] = Seq()
   val dependencies: Seq[EventReadMaster[_ <: Token]] = Seq()
@@ -29,6 +37,8 @@ abstract class Reaction(val c: ReactionConfig = ReactionConfig(0,0)) extends Mod
   val precedenceIn: Seq[EventReadMaster[PureToken]] = precedenceIO.precedenceIn.toSeq
   val precedenceOut: Seq[EventWriteMaster[PureToken]] = precedenceIO.precedenceOut.toSeq
 
+  var reactionsAfter: ArrayBuffer[Reaction] = ArrayBuffer()
+  var reactionsBefore: ArrayBuffer[Reaction] = ArrayBuffer()
 
   def driveDefaults(): Unit = {
     triggers.foreach(_.driveDefaults())
@@ -38,10 +48,44 @@ abstract class Reaction(val c: ReactionConfig = ReactionConfig(0,0)) extends Mod
     precedenceOut.foreach(_.driveDefaults())
   }
 
+  // Conditions to fire a reaction
   def fireReaction: Bool = {
-      triggers.map(_.resp.valid).reduce(_ || _) &&
-        dependencies.map(_.resp.valid).foldLeft(true.B)(_ || _)  &&
-        precedenceIn.map(_.resp.valid).foldLeft(true.B)(_ || _)
+      triggers.map(_.resp.valid).reduce(_ && _) &&
+        dependencies.map(_.resp.valid).foldLeft(true.B)(_ && _)  &&
+        precedenceIn.map(_.resp.valid).foldLeft(true.B)(_ && _)
+  }
+
+  // FIXME: Do operator overloading so we can do "r1 > r2 > r3 > r4`
+  // Function for connecting a downstream precedence reaction.
+  // The function is used like `upstream.precedes(downstream)`.
+  var precedenceOutIdx = 0
+  def precedes(down: Reaction): Unit = {
+    require(precedenceOut.length > precedenceOutIdx, s"[Reaction.scala] Only ${precedenceOut.length} precedenceOut ports")
+
+    // Create connection module for connecting the ports
+    val connection = Module(new PureConnection(ConnectionConfig(
+      gen = new PureToken(),
+      nChans = 1
+    )))
+
+    connection.io.write <> precedenceOut(precedenceOutIdx)
+
+    down._isPrecededBy(this, connection.io.reads(0))
+
+    // Store a reference to this downstream reaction
+    reactionsAfter += down
+
+    precedenceOutIdx += 1
+  }
+
+  // This is a private API for connecting upstream/downstream precedence reactions
+  // The user uses `upstream.precedes(downstream)` and internally the upstream
+  // makes a `_isPrecededBy
+  var precedenceInIdx = 0
+  private def _isPrecededBy(upstreamReaction: Reaction, upstreamPort: EventReadSlave[PureToken]): Unit = {
+    require(precedenceIn.length > precedenceInIdx)
+    precedenceIn(precedenceInIdx) <> upstreamPort
+    reactionsBefore += upstreamReaction
   }
 
   def hasPresentTriggers: Bool = {
@@ -52,7 +96,6 @@ abstract class Reaction(val c: ReactionConfig = ReactionConfig(0,0)) extends Mod
 
   val reactionEnable = WireDefault(false.B)
   val reactionDone = WireDefault(false.B)
-  val sIdle :: sRunning :: sDone :: Nil = Enum(3)
   val regState = RegInit(sIdle)
   val regCycles = RegInit(0.U(32.W))
 
@@ -97,4 +140,11 @@ abstract class Reaction(val c: ReactionConfig = ReactionConfig(0,0)) extends Mod
     }
   }
   assert(!(regCycles > 200.U), "[Reaction] Reaction was running for over 200cc assumed error")
+
+  // FIXME: These debug signals should be optional
+  statusIO.state := regState
+}
+
+object Reaction {
+  val sIdle :: sRunning :: sDone :: Nil = Enum(3)
 }

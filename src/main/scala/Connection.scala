@@ -52,6 +52,9 @@ abstract class Connection[T <: Token](c: ConnectionConfig[T]) extends Module {
   }
 }
 
+class PureConnection(c : ConnectionConfig[PureToken]) extends Connection(c) {
+
+}
 class SingleValueConnection[T <: Data](c: ConnectionConfig[SingleToken[T]]) extends Connection(c) {
   val data = RegInit(0.U.asTypeOf(c.gen.data))
   val present = RegInit(false.B)

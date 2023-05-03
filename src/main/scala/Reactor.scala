@@ -1,9 +1,11 @@
 package reactor
 
 import chisel3._
-
+import fpgatidbits.PlatformWrapper._
+import reactor.Reaction
 
 abstract class ReactorIO extends Bundle {}
+// FIXME: We need an optional precedence input port which should be connected to the first reaction of the reactor
 
 abstract class Reactor extends Module {
 
@@ -14,30 +16,27 @@ abstract class Reactor extends Module {
   val connections: Seq[Connection[_ <: Token]] = Seq()
   val childReactors: Seq[Reactor] = Seq()
 
+  def reactorMain: Unit = {
+    assert(util.PopCount(reactions.map(_.statusIO.state === Reaction.sRunning)) <= 1.U, "[Reactor.scala] Mutual exclusion between reactions not preserved")
+  }
 }
 
-class ReactorIoBuilder
-//abstract class ReactorIO extends Bundle {
-//  def ins: Seq[InputPortIO[_ <: BaseEventIO]]
-//  def outs: Seq[OutputPortIO[_ <: BaseEventIO]]
-//}
-//
-//abstract class Reactor extends Module {
-//  val inPorts: Array[InputPort[BaseEventIO]]
-//  val outPorts: Array[OutputPort[BaseEventIO]]
-//}
-//
-//
-//
-//class ExampleReactorIO extends ReactorIO {
-//  val in1 = new InputPortIO(InputPortConfig(gen=new SingleValueEventIO(gen=UInt(8.W)), nReaders=1))
-//  val in2 = new InputPortIO(InputPortConfig(gen=new BramArrayEventIO(gen=UInt(8.W),depth=8), nReaders=1))
-//  val out1 = new OutputPortIO(OutputPortConfig(gen=new SingleValueEventIO(gen=UInt(8.W)), nWriters = 1))
-//
-//  def ins = Seq(in1, in2)
-//  def outs = Seq(out1)
-//
-//
-//
-//}
-//
+// FIXME: We want numMemPorts to be configurable
+abstract class MainReactorIO(p: PlatformWrapperParams) extends GenericAcceleratorIF(AcceleratorParams(numMemPorts=1),p) {
+  val start = Input(Bool())
+  val done = Output(Bool())
+  val running = Output(Bool())
+
+  def connectScheduler(s: Scheduler): Unit = {
+    start := s.io.start
+    running := s.io.running
+    s.io.done := done
+  }
+}
+
+abstract class MainReactor(p: PlatformWrapperParams) extends GenericAccelerator(p) {
+
+  val io: MainReactorIO
+  val scheduler: Scheduler
+
+}

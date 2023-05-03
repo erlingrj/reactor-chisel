@@ -23,6 +23,23 @@ class FifoToken[T <: Data](gen:T, depth: Int) extends Token {
   val data = gen
   val valid = Bool()
 }
+
+
+
+// Create a separate class hierarchy for SwTokens, i.e. tokens coming from Software reactors
+abstract class SwToken extends Token {}
+class SwSingleToken[T <: Data](gen: T) extends SwToken{
+  val data = gen
+  val present= Bool()
+}
+
+class SwArrayToken extends SwToken{
+  val addr = UInt(32.W) // FIXME: This assumes 32bit shared memory space
+  val valid = Bool()
+}
+
+
+
 class EventReadReq[T <: Token](gen: T) extends Bundle {
   gen match {
     case _: ArrayToken[_] =>
