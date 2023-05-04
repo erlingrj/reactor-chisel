@@ -11,13 +11,14 @@ class DualWithContained extends Reactor {
   val in = Module(new InputPort(InputPortConfig(defData, defToken, 2)))
   val out = Module(new OutputPort(OutputPortConfig(defData, defToken, 2)))
 
-  in.connectDownstream(r1.io.in)
-  in.connectDownstream(r2.io.in)
+  in >> r1.io.in
+  in >> r2.io.in
 
-  out.connectUpstream(r1.io.out)
-  out.connectUpstream(r2.io.out)
+  out << r1.io.out
+  out << r2.io.out
 
-  r1.precedes(r2)
+  // Precedence relationships
+  r1 > r2
 
   val contained = Module(new DualAddN)
 
@@ -37,8 +38,9 @@ class DualWithContained extends Reactor {
   in1PT.declareInput(io.in.drop(1))
 
   // Connect regular ports
-  in.connectUpstream(io.in(0))
-  out.connectDownstream(io.out1)
+  in << io.in
+  out >> io.out1
+
   contained.io.out <> io.out2 // FIXME: Create a API for this also?
 
   // Construct the pass-through connection

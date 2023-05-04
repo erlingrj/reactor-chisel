@@ -31,9 +31,9 @@ class TestReaction extends AnyFlatSpec with ChiselScalatestTester {
       clk.step(5)
       fork {
         ReactorSim.readSlave(c.io.in, 13.U)
-      }.fork.withRegion(Monitor) {
+      }.fork {
         ReactorSim.writeSlave(c.io.out, 14.U)
-      }.joinAndStep(clk)
+      }.join()
     }
   }
 }

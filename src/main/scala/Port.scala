@@ -4,6 +4,8 @@ import chisel3._
 import chisel3.internal.firrtl.Width
 import chisel3.util._
 
+import scala.collection.mutable.ArrayBuffer
+
 
 abstract class ReactorPortIO[T1 <: Data, T2 <: Token[T1]] extends Bundle {
 
@@ -80,6 +82,16 @@ class InputPort[T1 <: Data, T2 <: Token[T1]](c: InputPortConfig[T1,T2]) extends 
     io.outward <> up
     upstreamConnected = true
   }
+
+  def >>(down: EventReadMaster[T1, T2]): Unit  = {
+    connectDownstream(down)
+  }
+  def <<(up: EventReadMaster[T1,T2]): Unit = {
+    connectUpstream(up)
+  }
+  def <<(up: Vec[EventReadMaster[T1, T2]]): Unit = {
+    connectUpstream(up(0))
+  }
 }
 
 case class OutputPortConfig[T1 <: Data, T2 <: Token[T1]](
@@ -141,6 +153,17 @@ class OutputPort[T1 <: Data, T2 <: Token[T1]](c: OutputPortConfig[T1, T2]) exten
     io.outward <> down
     downstreamConnected = true
   }
+
+  def <<(up: EventWriteMaster[T1,T2]) :Unit = {
+    connectUpstream(up)
+  }
+
+  def >>(down: EventWriteMaster[T1, T2]): Unit = {
+    connectDownstream(down)
+  }
+
+  assert(!(io.outward.fire && !io.outward.ready))
+  assert(!(io.outward.req.valid && !io.outward.ready))
 }
 
 /**
@@ -159,18 +182,27 @@ class OutputPort[T1 <: Data, T2 <: Token[T1]](c: OutputPortConfig[T1, T2]) exten
  */
 class InputPortPassthroughBuilder[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) {
 
-  var downstream: Seq[EventReadMaster[T1,T2]] = Seq()
+  var downstream: ArrayBuffer[EventReadMaster[T1,T2]] = ArrayBuffer()
   var upstream: Seq[EventReadMaster[T1, T2]] = Seq()
 
   def width = downstream.length
   def declareDownstream(down: Seq[EventReadMaster[T1,T2]]) = {
-    require(width == 0)
-    downstream = down
+    down.foreach(downstream += _)
+  }
+  def >>(down: Seq[EventReadMaster[T1,T2]]) = {
+    declareDownstream(down)
   }
 
+
+  // Declare the Input port in the parent reactor. Check the width.
+  // Either it is equal the number of downstreams, or it is 1 greater (due to an internal port)
   def declareInput(up: Seq[EventReadMaster[T1, T2]]) = {
-    require(up.length == width)
-    upstream = up
+    if (up.length == width) upstream = up
+    else if (up.length == (width - 1)) upstream = up.drop(1)
+    else require(false)
+  }
+  def <<(up: Seq[EventReadMaster[T1, T2]]) = {
+    declareInput(up)
   }
 
   def construct(): Unit = {
