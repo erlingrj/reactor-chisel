@@ -14,7 +14,7 @@ build:
 test:
 		$(SBT) "run $(BUILD_PATH)"
 
-integration-tests:
+integration-test:
 	./integration-tests.sh
 
 clean:
