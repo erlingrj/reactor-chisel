@@ -1,6 +1,7 @@
 package reactor.test
 
 import reactor._
+import reactor.globals._
 
 import chisel3._
 import org.scalatest._
@@ -11,9 +12,10 @@ import chiseltest.simulator.WriteVcdAnnotation
 import org.scalatest.flatspec.AnyFlatSpec
 import chisel3.experimental.VecLiterals._
 
+
 // This object implements convenience functions for simulating a Connection and writing and reading and expecting
 object ConnectionSim {
-  def write[T <: Data](c: EventWriteSlave[SingleToken[T]], data: T, fire: Boolean)(implicit clk: Clock): Unit = {
+  def write[T <: Data](c: EventWriteSlave[T,SingleToken[T]], data: T, fire: Boolean)(implicit clk: Clock): Unit = {
     timescope {
       c.req.valid.poke(true.B)
       c.req.present.poke(true.B)
@@ -27,7 +29,7 @@ object ConnectionSim {
     }
   }
 
-  def writeAbsent[T <: Data](c: EventWriteSlave[SingleToken[T]], fire: Boolean)(implicit clk: Clock): Unit = {
+  def writeAbsent[T <: Data](c: EventWriteSlave[T, SingleToken[T]], fire: Boolean)(implicit clk: Clock): Unit = {
     timescope {
       c.req.valid.poke(true.B)
       c.req.present.poke(false.B)
@@ -40,7 +42,7 @@ object ConnectionSim {
     }
   }
 
-  def readNow[T <: Data](c: EventReadSlave[SingleToken[T]], data: T, fire: Boolean)(implicit clk: Clock): Unit = {
+  def readNow[T <: Data](c: EventReadSlave[T, SingleToken[T]], data: T, fire: Boolean)(implicit clk: Clock): Unit = {
     timescope {
       c.resp.valid.expect(true.B)
       c.resp.present.expect(true.B)
@@ -54,7 +56,7 @@ object ConnectionSim {
       clk.step()
     }
   }
-  def readAbsentNow[T <: Data](c: EventReadSlave[SingleToken[T]], fire: Boolean)(implicit clk: Clock): Unit = {
+  def readAbsentNow[T <: Data](c: EventReadSlave[T, SingleToken[T]], fire: Boolean)(implicit clk: Clock): Unit = {
     timescope {
       c.resp.valid.expect(true.B)
       c.resp.present.expect(false.B)
@@ -72,13 +74,14 @@ object ConnectionSim {
 class R1 extends Module {
   val in1 = Module(new InputPort(
     InputPortConfig(
-      gen = new SingleToken(UInt(8.W)),
+      defData,
+      defToken,
       nReaders = 1
     )
   ))
 
   class TestReactorIO extends Bundle {
-    val in1 = Vec(1, new EventReadMaster(new SingleToken(UInt(8.W))))
+    val in1 = Vec(1, new EventReadMaster(defData, defToken))
   }
 
   val io = IO(new TestReactorIO)
@@ -87,17 +90,16 @@ class R1 extends Module {
 
 
 class TestConnectionBuilder extends Module {
-
   class TestIO extends Bundle {
-    val in1 = new EventReadMaster(new SingleToken(UInt(8.W)))
-    val in2 = new EventReadMaster(new SingleToken(UInt(8.W)))
-    val out = new EventWriteMaster(new SingleToken(UInt(8.W)))
+    val in1 = new EventReadMaster(defData, defToken)
+    val in2 = new EventReadMaster(defData, defToken)
+    val out = new EventWriteMaster(defData, defToken)
   }
   val io = IO(new TestIO)
 
   val out = Module(new OutputPort(
     OutputPortConfig(
-      gen = new SingleToken(UInt(8.W)),
+      defData, defToken,
       nWriters = 1
     )
   ))
@@ -105,7 +107,7 @@ class TestConnectionBuilder extends Module {
 
   val in1 = Module(new InputPort(
     InputPortConfig(
-      gen = new SingleToken(UInt(8.W)),
+      defData, defToken,
       nReaders = 1
     )
   ))
@@ -113,7 +115,7 @@ class TestConnectionBuilder extends Module {
 
   val in2 = Module(new InputPort(
     InputPortConfig(
-      gen = new SingleToken(UInt(8.W)),
+      defData, defToken,
       nReaders = 1
     )
   ))
@@ -123,8 +125,8 @@ class TestConnectionBuilder extends Module {
   io.in1 <> in1.io.outward
   io.in2 <> in2.io.outward
 
-  val connFunc = (cfg: ConnectionConfig[SingleToken[UInt]]) => new SingleValueConnection(cfg)
-  val connBuilder = new ConnectionBuilder(connFunc, new SingleToken(UInt(8.W)))
+  val connFunc = (cfg: ConnectionConfig[UInt, SingleToken[UInt]]) => new SingleValueConnection(cfg)
+  val connBuilder = new ConnectionBuilder(connFunc, defData, defToken)
 
   connBuilder.addUpstream(out.io.outward)
   connBuilder.addDownstream(VecInit(in1.io.outward))
@@ -137,7 +139,7 @@ class TestConnection extends AnyFlatSpec with ChiselScalatestTester {
   it should "read write simple" in {
     test(new SingleValueConnection(
       ConnectionConfig(
-        gen = new SingleToken(gen = UInt(8.W)),
+        defData, defToken,
         nChans = 1
       )
     )).withAnnotations(Seq(WriteVcdAnnotation)) { c =>
@@ -153,7 +155,7 @@ class TestConnection extends AnyFlatSpec with ChiselScalatestTester {
   it should "Write and read absent" in {
     test(new SingleValueConnection(
       ConnectionConfig(
-        gen = new SingleToken(gen = UInt(8.W)),
+        defData, defToken,
         nChans = 1
       )
     )).withAnnotations(Seq(WriteVcdAnnotation)) { c =>
@@ -167,7 +169,7 @@ class TestConnection extends AnyFlatSpec with ChiselScalatestTester {
   it should "Write and read multiple with absent" in {
     test(new SingleValueConnection(
       ConnectionConfig(
-        gen = new SingleToken(gen = UInt(8.W)),
+        defData, defToken,
         nChans = 8
       )
     )).withAnnotations(Seq(WriteVcdAnnotation)) { c =>

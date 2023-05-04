@@ -5,18 +5,19 @@ import chisel3.internal.firrtl.Width
 import chisel3.util._
 
 
-abstract class ReactorPortIO[T <: Token] extends Bundle {
+abstract class ReactorPortIO[T1 <: Data, T2 <: Token[T1]] extends Bundle {
 
 }
-case class InputPortConfig[T <: Token] (
-                                   gen: T,
+case class InputPortConfig[T1 <: Data, T2 <: Token[T1]] (
+                                   genData: T1,
+                                   genToken : T2,
                                    nReaders: Int
                                  ) {
   def nReadersWidth = if (nReaders == 1) 1.W else log2Ceil(nReaders).W
 }
-class InputPortIO[T <: Token](c: InputPortConfig[T]) extends ReactorPortIO[T] {
-  val inward = Vec(c.nReaders, new EventReadSlave(c.gen))
-  val outward = new EventReadMaster(c.gen)
+class InputPortIO[T1 <: Data, T2 <: Token[T1]](c: InputPortConfig[T1,T2]) extends ReactorPortIO[T1,T2] {
+  val inward = Vec(c.nReaders, new EventReadSlave(c.genData, c.genToken))
+  val outward = new EventReadMaster(c.genData, c.genToken)
 
   def driveDefaults(): Unit = {
     inward.foreach(_.driveDefaults())
@@ -31,7 +32,7 @@ class InputPortIO[T <: Token](c: InputPortConfig[T]) extends ReactorPortIO[T] {
 
 }
 
-class InputPort[T <: Token](c: InputPortConfig[T]) extends Module {
+class InputPort[T1 <: Data, T2 <: Token[T1]](c: InputPortConfig[T1,T2]) extends Module {
   val io = IO(new InputPortIO(c))
   io.driveDefaults()
   io.inward.foreach(_ <> io.outward)
@@ -68,28 +69,29 @@ class InputPort[T <: Token](c: InputPortConfig[T]) extends Module {
   }
 
   var downstreamIdx = 0
-  def connectDownstream(d: EventReadMaster[T]): Unit = {
+  def connectDownstream(d: EventReadMaster[T1,T2]): Unit = {
     io.inward(downstreamIdx) <> d
     downstreamIdx += 1
   }
 
   var upstreamConnected = false
-  def connectUpstream(up: EventReadMaster[T]) = {
+  def connectUpstream(up: EventReadMaster[T1, T2]) = {
     require(!upstreamConnected, "[Port.scala] connectUpstream called twice on InputPort")
     io.outward <> up
     upstreamConnected = true
   }
 }
 
-case class OutputPortConfig[T <: Token](
-                                      gen: T,
+case class OutputPortConfig[T1 <: Data, T2 <: Token[T1]](
+                                      genData: T1,
+                                      genToken: T2,
                                       nWriters: Int
                                       ) {
   def nWritersWidth: Width = if (nWriters == 1) 1.W else log2Ceil(nWriters).W
 }
-class OutputPortIO[T <: Token](c: OutputPortConfig[T]) extends ReactorPortIO[T] {
-  val inward = Vec(c.nWriters, new EventWriteSlave(c.gen))
-  val outward = new EventWriteMaster(c.gen)
+class OutputPortIO[T1 <: Data, T2 <: Token[T1]](c: OutputPortConfig[T1, T2]) extends ReactorPortIO[T1,T2] {
+  val inward = Vec(c.nWriters, new EventWriteSlave(c.genData, c.genToken))
+  val outward = new EventWriteMaster(c.genData, c.genToken)
 
   def driveDefaults(): Unit = {
     inward.foreach(_.driveDefaults())
@@ -106,7 +108,7 @@ class OutputPortIO[T <: Token](c: OutputPortConfig[T]) extends ReactorPortIO[T] 
   }
 }
 
-class OutputPort[T <: Token](c: OutputPortConfig[T]) extends Module {
+class OutputPort[T1 <: Data, T2 <: Token[T1]](c: OutputPortConfig[T1, T2]) extends Module {
   val io = IO(new OutputPortIO(c))
   io.driveDefaults()
 
@@ -128,13 +130,13 @@ class OutputPort[T <: Token](c: OutputPortConfig[T]) extends Module {
   }
 
   var upstreamIdx = 0
-  def connectUpstream(up: EventWriteMaster[T]) = {
+  def connectUpstream(up: EventWriteMaster[T1, T2]) = {
     io.inward(upstreamIdx) <> up
     upstreamIdx += 1
   }
 
   var downstreamConnected = false
-  def connectDownstream(down: EventWriteMaster[T]) = {
+  def connectDownstream(down: EventWriteMaster[T1, T2]) = {
     require(!downstreamConnected)
     io.outward <> down
     downstreamConnected = true
@@ -155,24 +157,24 @@ class OutputPort[T <: Token](c: OutputPortConfig[T]) extends Module {
  * @tparam T
  *
  */
-class InputPortPassthroughBuilder[T <: Token](gen: T) {
+class InputPortPassthroughBuilder[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) {
 
-  var downstream: Seq[EventReadMaster[T]] = Seq()
-  var upstream: Seq[EventReadMaster[T]] = Seq()
+  var downstream: Seq[EventReadMaster[T1,T2]] = Seq()
+  var upstream: Seq[EventReadMaster[T1, T2]] = Seq()
 
   def width = downstream.length
-  def declareDownstream(down: Seq[EventReadMaster[T]]) = {
+  def declareDownstream(down: Seq[EventReadMaster[T1,T2]]) = {
     require(width == 0)
     downstream = down
   }
 
-  def declareInput(up: Seq[EventReadMaster[T]]) = {
+  def declareInput(up: Seq[EventReadMaster[T1, T2]]) = {
     require(up.length == width)
     upstream = up
   }
 
   def construct(): Unit = {
-    val config = InputPortConfig(gen = gen, nReaders = 1)
+    val config = InputPortConfig(genData = genData, genToken = genToken, nReaders = 1)
     val inputPorts = Seq.fill(width)(Module(new InputPort(config)))
     for (i <- 0 until width) {
       upstream(i) <> inputPorts(i).io.outward
@@ -185,20 +187,23 @@ class OutputPortPassthroughBuilder {
 
 }
 
-case class TopInputPortConfig[T <: SwToken](
-                             gen: T
+case class TopInputPortConfig[T1 <: Data, T2 <: SwToken[T1]](
+                             genData: T1,
+                             genToken: T2
                              )
 
-class TopInputPortIO[T <: Data](c: TopInputPortConfig[SwSingleToken[T]]) extends Bundle {
+  class TopInputPortIO[T1 <: Data, T2 <: SwToken[T1]](c: TopInputPortConfig[T1, T2]) extends Bundle {
   val fire = Input(Bool())
-  val in = Input(new SwSingleToken(c.gen.data))
-  val out = new EventWriteMaster(new SingleToken(c.gen.data))
+  val in = Input(new SwSingleToken(c.genData))
+  val out = new EventWriteMaster(c.genData, new SingleToken(c.genData))
 
   def driveDefaults() = {
     out.driveDefaults()
   }
 }
-class TopInputPort[T <: Data](c: TopInputPortConfig[SwSingleToken[T]]) extends Module {
+class TopInputPort[T1 <: Data, T2 <: SwToken[T1]](c: TopInputPortConfig[T1, T2]) extends Module {
+  require(c.genToken.isInstanceOf[SwSingleToken[T1]])
+
   val io = IO(new TopInputPortIO(c))
   io.driveDefaults()
 
@@ -211,26 +216,30 @@ class TopInputPort[T <: Data](c: TopInputPortConfig[SwSingleToken[T]]) extends M
 
   assert(!(io.fire && RegNext(io.fire)), "[Port.scala] TopInputPort triggered in two consecutive cycles]")
 }
-case class TopOutputPortConfig[T <: SwToken](
-                                             gen: T
+case class TopOutputPortConfig[T1 <: Data, T2 <: SwToken[T1]](
+                                             genData: T1,
+                                             genToken: T2
                                            )
 
-class TopOutputPortIO[T <: Data](c: TopOutputPortConfig[SwSingleToken[T]]) extends Bundle {
+class TopOutputPortIO[T1 <: Data, T2 <: SwToken[T1]](c: TopOutputPortConfig[T1, T2]) extends Bundle {
   val fire = Output(Bool())
-  val out = Output(c.gen)
-  val in = new EventReadMaster(new SingleToken(c.gen.data))
+  val out = Output(c.genToken)
+  val in = new EventReadMaster(c.genData, new SingleToken(c.genData))
 
   def driveDefaults() = {
     in.driveDefaults()
     fire := false.B
-    out := 0.U.asTypeOf(c.gen)
+    out := 0.U.asTypeOf(c.genToken)
   }
 }
-class TopOutputPort[T <: Data](c: TopOutputPortConfig[SwSingleToken[T]]) extends Module {
+
+// FIXME: Think of how we support the other ports
+class TopOutputPort[T1 <: Data, T2 <: SwToken[T1]](c: TopOutputPortConfig[T1, T2]) extends Module {
+  require(c.genToken.isInstanceOf[SwSingleToken[T1]])
   val io = IO(new TopOutputPortIO(c))
   io.driveDefaults()
 
-  val data = RegInit(0.U.asTypeOf(c.gen))
+  val data = RegInit(0.U.asTypeOf(c.genToken)).asInstanceOf[SwSingleToken[T1]]
   io.out := data
 
   when(io.in.resp.valid) {

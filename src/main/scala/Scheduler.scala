@@ -65,13 +65,13 @@ class Scheduler(c: SchedulerConfig) extends Module {
 
   var outputIdx = 0
   var inputIdx = 0
-  def connect(in: TopInputPort[_ <: Data]): Unit = {
+  def connect(in: TopInputPort[_,_]): Unit = {
     require(inputIdx < io.fireOut.length)
     in.io.fire := io.fireIn(inputIdx)
     inputIdx += 1
   }
 
-  def connect(out: TopOutputPort[_ <: Data]): Unit = {
+  def connect(out: TopOutputPort[_,_]): Unit = {
     require(outputIdx < io.fireOut.length)
     io.fireOut(outputIdx) := out.io.fire
     outputIdx += 1

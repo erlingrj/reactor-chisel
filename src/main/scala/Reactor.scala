@@ -4,6 +4,11 @@ import chisel3._
 import fpgatidbits.PlatformWrapper._
 import reactor.Reaction
 
+package object globals {
+  val defData = UInt(8.W)
+  val defToken = new SingleToken(defData)
+}
+
 abstract class ReactorIO extends Bundle {}
 // FIXME: We need an optional precedence input port which should be connected to the first reaction of the reactor
 
@@ -11,9 +16,9 @@ abstract class Reactor extends Module {
 
   val io: ReactorIO
   val reactions: Seq[Reaction] = Seq()
-  val inPorts: Seq[InputPort[_ <: Token]] = Seq()
-  val outPorts: Seq[OutputPort[_ <: Token]] = Seq()
-  val connections: Seq[Connection[_ <: Token]] = Seq()
+  val inPorts: Seq[InputPort[_ <: Data, _ <: Token[_<: Data]]] = Seq()
+  val outPorts: Seq[OutputPort[_ <: Data, _ <: Token[_<: Data]]] = Seq()
+  val connections: Seq[Connection[_ <: Data,_ <: Token[_<: Data]]] = Seq()
   val childReactors: Seq[Reactor] = Seq()
 
   def reactorMain: Unit = {

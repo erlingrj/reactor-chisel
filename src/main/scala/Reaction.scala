@@ -18,28 +18,31 @@ class ReactionStatusIO extends Bundle {
 }
 
 class ReactionPrecedencePorts(c: ReactionConfig) extends Bundle {
-  val precedenceIn = Vec(c.nPrecedenceIn, new EventReadMaster(new PureToken))
-  val precedenceOut = Vec(c.nPrecedenceOut, new EventWriteMaster(new PureToken))
+  val precedenceIn = Vec(c.nPrecedenceIn, new EventReadMaster(UInt(0.W), new PureToken))
+  val precedenceOut = Vec(c.nPrecedenceOut, new EventWriteMaster(UInt(0.W), new PureToken))
 
   def driveDefaults() = {
     precedenceIn.foreach(_.driveDefaults())
     precedenceOut.foreach(_.driveDefaults())
   }
 }
-abstract class Reaction(val c: ReactionConfig = ReactionConfig(0,0)) extends Module {
+abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Module {
+  import ReactionApi.{lf_set, lf_get, lf_present}
   val io: ReactionIO
   val precedenceIO = IO(new ReactionPrecedencePorts(c))
   val statusIO = IO(new ReactionStatusIO())
 
-  val triggers: Seq[EventReadMaster[_ <: Token]] = Seq()
-  val dependencies: Seq[EventReadMaster[_ <: Token]] = Seq()
-  val antiDependencies: Seq[EventWriteMaster[_ <: Token]] = Seq()
-  val precedenceIn: Seq[EventReadMaster[PureToken]] = precedenceIO.precedenceIn.toSeq
-  val precedenceOut: Seq[EventWriteMaster[PureToken]] = precedenceIO.precedenceOut.toSeq
+  val triggers: Seq[EventReadMaster[ _<: Data, _ <: Token[_<:Data]]] = Seq()
+  val dependencies: Seq[EventReadMaster[ _<: Data, _ <: Token[_<:Data]]] = Seq()
+  val antiDependencies: Seq[EventWriteMaster[ _<: Data, _ <: Token[_<:Data]]] = Seq()
+
+  val precedenceIn: Seq[EventReadMaster[UInt, PureToken]] = precedenceIO.precedenceIn.toSeq
+  val precedenceOut: Seq[EventWriteMaster[UInt, PureToken]] = precedenceIO.precedenceOut.toSeq
 
   var reactionsAfter: ArrayBuffer[Reaction] = ArrayBuffer()
   var reactionsBefore: ArrayBuffer[Reaction] = ArrayBuffer()
 
+  // Bring LF API into scope
   def driveDefaults(): Unit = {
     triggers.foreach(_.driveDefaults())
     dependencies.foreach(_.driveDefaults())
@@ -64,7 +67,8 @@ abstract class Reaction(val c: ReactionConfig = ReactionConfig(0,0)) extends Mod
 
     // Create connection module for connecting the ports
     val connection = Module(new PureConnection(ConnectionConfig(
-      gen = new PureToken(),
+      gen1 = UInt(0.W),
+      gen2 = new PureToken(),
       nChans = 1
     )))
 
@@ -82,7 +86,7 @@ abstract class Reaction(val c: ReactionConfig = ReactionConfig(0,0)) extends Mod
   // The user uses `upstream.precedes(downstream)` and internally the upstream
   // makes a `_isPrecededBy
   var precedenceInIdx = 0
-  private def _isPrecededBy(upstreamReaction: Reaction, upstreamPort: EventReadSlave[PureToken]): Unit = {
+  private def _isPrecededBy(upstreamReaction: Reaction, upstreamPort: EventReadSlave[UInt, PureToken]): Unit = {
     require(precedenceIn.length > precedenceInIdx)
     precedenceIn(precedenceInIdx) <> upstreamPort
     reactionsBefore += upstreamReaction

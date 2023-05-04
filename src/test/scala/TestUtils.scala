@@ -7,7 +7,7 @@ import reactor._
 
 // FIXME: Generalize to other types of Tokens? Maybe we should capture token in a single paramter
 object ReactorSim {
-  def readSlave[T <: Data](c: EventReadMaster[SingleToken[T]], data: T, expFire: Boolean=true, present: Boolean = true)(implicit clk: Clock): Unit = {
+  def readSlave[T <: Data](c: EventReadMaster[T, SingleToken[T]], data: T, expFire: Boolean=true, present: Boolean = true)(implicit clk: Clock): Unit = {
     // FIXME: Should also accept Vec of EventReadMaster, if driving top-level input of Reactor, then we wanna drive all inputs together, maybe
     require(expFire)
 
@@ -26,7 +26,7 @@ object ReactorSim {
     }
   }
 
-  def readMaster[T <: Data](c: EventReadSlave[SingleToken[T]], expData: T, fire: Boolean=true, present: Boolean = true, now: Boolean = false)(implicit clk: Clock): Unit = {
+  def readMaster[T <: Data](c: EventReadSlave[T, SingleToken[T]], expData: T, fire: Boolean=true, present: Boolean = true, now: Boolean = false)(implicit clk: Clock): Unit = {
     timescope {
       if (!now) {
         while (!c.resp.valid.peekBoolean()) {
@@ -41,7 +41,7 @@ object ReactorSim {
     }
   }
 
-  def writeMaster[T <: Data](c: EventWriteSlave[SingleToken[T]], data: T, present: Boolean = true, fire: Boolean=true)(implicit clk: Clock): Unit = {
+  def writeMaster[T <: Data](c: EventWriteSlave[T, SingleToken[T]], data: T, present: Boolean = true, fire: Boolean=true)(implicit clk: Clock): Unit = {
     timescope {
       c.req.valid.poke(true.B)
       c.req.present.poke(true.B)
@@ -54,7 +54,7 @@ object ReactorSim {
   }
 
   // FIXME: We also want to receive a bunch of writes and only expect on the last one (essentially emulate a connection)
-  def writeSlave[T <: Data](c: EventWriteMaster[SingleToken[T]], expData: T, present: Boolean = true, fire: Boolean = true, now: Boolean = false)(implicit clk: Clock): Unit = {
+  def writeSlave[T <: Data](c: EventWriteMaster[T, SingleToken[T]], expData: T, present: Boolean = true, fire: Boolean = true, now: Boolean = false)(implicit clk: Clock): Unit = {
     timescope {
       if (!now) {
         while (!c.req.valid.peekBoolean()) {
