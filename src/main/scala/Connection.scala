@@ -54,12 +54,23 @@ abstract class Connection[T1 <: Data, T2 <: Token[T1]](c: ConnectionConfig[T1, T
   }
 }
 
+// A pure connection should just be used by Timers and Precedence ports. It does not support multiple writers
+// The fire and valid and present signals must be asserted the same
 class PureConnection(c : ConnectionConfig[UInt,PureToken]) extends Connection(c) {
-
-  // In the PureConnection, there is no absent/present, so present is always high when we fire
-  when (regState === sToken) {
-    for (i <- 0 until c.nChans) {
-      io.reads(i).resp.present := regTokens(i)
+  val regPresent = RegInit(VecInit(Seq.fill(c.nChans)(false.B)))
+  switch (regState) {
+    is (sIdle) {
+     when (io.write.fire) {
+         regPresent.foreach(_ := io.write.req.present)
+     }
+    }
+    is (sToken) {
+      for (i <- 0 until c.nChans) {
+        when (io.reads(i).fire) {
+          regPresent(i) := false.B
+        }
+        io.reads(i).resp.present := regPresent(i)
+      }
     }
   }
 }
