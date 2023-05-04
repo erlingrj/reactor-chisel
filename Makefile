@@ -9,10 +9,10 @@ run: build
 	make -C $(BUILD_PATH) run
 
 build:
-		$(SBT) "run $(TOP) $(BUILD_PATH)"
+	$(SBT) "run $(TOP) $(BUILD_PATH)"
 
 test:
-		$(SBT) "run $(BUILD_PATH)"
+	$(SBT) test
 
 integration-test:
 	./integration-tests.sh
