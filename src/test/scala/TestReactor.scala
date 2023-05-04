@@ -90,4 +90,17 @@ class TestReactor extends AnyFlatSpec with ChiselScalatestTester {
       clk.step(150)
     }
   }
+
+  behavior of "DualCounter"
+  it should "initialize" in {
+    test(new ReactorDualCounter) { c =>
+      implicit val clk = c.clock
+    }
+  }
+  it should "print some hellos" in {
+    test(new ReactorDualCounter).withAnnotations(Seq(WriteVcdAnnotation)) { c =>
+      implicit val clk = c.clock
+      clk.step(150)
+    }
+  }
 }

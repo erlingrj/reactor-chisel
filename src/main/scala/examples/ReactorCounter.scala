@@ -12,7 +12,7 @@ class ReactorCounter extends Reactor {
 
   val io = IO(new Reactor1IO)
   val r = Module(new ReactionPurePrint())
-  val t = Module(new Timer(offset = 0, period=10))
+  val t = Module(new Timer(TimerConfig(0, 20)))
 
   val c = new PureConnectionBuilder()
   c << t

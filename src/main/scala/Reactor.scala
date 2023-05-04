@@ -17,6 +17,7 @@ abstract class ReactorIO extends Bundle {}
 abstract class Reactor extends Module {
 
   val io: ReactorIO
+  // FIXME: Verify that there is a precedence relationship among all reactions, i.e. mutex is guaranteed
   val reactions: Seq[Reaction] = Seq()
   val inPorts: Seq[InputPort[_ <: Data, _ <: Token[_<: Data]]] = Seq()
   val outPorts: Seq[OutputPort[_ <: Data, _ <: Token[_<: Data]]] = Seq()

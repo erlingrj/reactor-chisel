@@ -156,11 +156,18 @@ class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (genData: T1, genToken: T2) 
     genToken match {
       case _: SingleToken[T1] =>
         req.token.asInstanceOf[SingleToken[T1]].data := d
+      case _: PureToken => // OK
       case _ => assert(false.B)
     }
   }
 
-  def write(d: T1, addr: UInt) = {
+  def writeAbsent(): Unit = {
+    assert(ready)
+    req.valid := true.B
+    req.present := false.B
+  }
+
+  def write(d: T1, addr: UInt): Unit = {
     assert(ready)
     req.valid := true.B
     req.present := true.B
@@ -169,7 +176,6 @@ class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (genData: T1, genToken: T2) 
       case _ => assert(false.B)
     }
   }
-
 }
 
 
