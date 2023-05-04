@@ -2,14 +2,14 @@ package reactor.examples
 
 import chisel3._
 import reactor._
+import reactor.globals._
 
 class DualWithContained extends Reactor {
-  val gen = new SingleToken(UInt(8.W))
   val r1 = Module(new ReactionAddN(3, ReactionConfig(nPrecedenceOut = 1)))
   val r2 = Module(new ReactionAddN(4, ReactionConfig(nPrecedenceIn = 1)))
 
-  val in = Module(new InputPort(InputPortConfig(gen, 2)))
-  val out = Module(new OutputPort(OutputPortConfig(gen, 2)))
+  val in = Module(new InputPort(InputPortConfig(defData, defToken, 2)))
+  val out = Module(new OutputPort(OutputPortConfig(defData, defToken, 2)))
 
   in.connectDownstream(r1.io.in)
   in.connectDownstream(r2.io.in)
@@ -22,14 +22,14 @@ class DualWithContained extends Reactor {
   val contained = Module(new DualAddN)
 
   // Handle pass-through input connections
-  val in1PT = new InputPortPassthroughBuilder(gen)
+  val in1PT = new InputPortPassthroughBuilder(defData, defToken)
   in1PT.declareDownstream(contained.io.in)
 
   // Create top-level IO now that we have all port info
   class Reactor2IO extends ReactorIO {
-    val in = Vec(1 + in1PT.width, new EventReadMaster(gen))
-    val out1 = new EventWriteMaster(gen)
-    val out2 = new EventWriteMaster(gen)
+    val in = Vec(1 + in1PT.width, new EventReadMaster(defData, defToken))
+    val out1 = new EventWriteMaster(defData, defToken)
+    val out2 = new EventWriteMaster(defData, defToken)
   }
   val io = IO(new Reactor2IO)
 

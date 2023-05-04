@@ -4,14 +4,15 @@ import chisel3._
 import chisel3.util._
 
 import scala.collection.mutable.ArrayBuffer
-case class ConnectionConfig[T <: Token]
+case class ConnectionConfig[T1 <: Data, T2 <: Token[T1]]
 (
-  gen: T,
+  gen1: T1,
+  gen2: T2,
   nChans: Int
 )
-class ConnectionIO[T <: Token](c: ConnectionConfig[T]) extends Bundle {
-  val write = new EventWriteSlave(c.gen)
-  val reads = Vec(c.nChans, new EventReadSlave(c.gen))
+class ConnectionIO[T1 <: Data, T2 <: Token[T1]](c: ConnectionConfig[T1,T2]) extends Bundle {
+  val write = new EventWriteSlave(c.gen1, c.gen2)
+  val reads = Vec(c.nChans, new EventReadSlave(c.gen1, c.gen2))
 
   def driveDefaults(): Unit = {
     write.driveDefaults()
@@ -19,7 +20,7 @@ class ConnectionIO[T <: Token](c: ConnectionConfig[T]) extends Bundle {
   }
 }
 
-abstract class Connection[T <: Token](c: ConnectionConfig[T]) extends Module {
+abstract class Connection[T1 <: Data, T2 <: Token[T1]](c: ConnectionConfig[T1, T2]) extends Module {
   val io = IO(new ConnectionIO(c))
   io.driveDefaults()
 
@@ -52,11 +53,11 @@ abstract class Connection[T <: Token](c: ConnectionConfig[T]) extends Module {
   }
 }
 
-class PureConnection(c : ConnectionConfig[PureToken]) extends Connection(c) {
+class PureConnection(c : ConnectionConfig[UInt,PureToken]) extends Connection(c) {
 
 }
-class SingleValueConnection[T <: Data](c: ConnectionConfig[SingleToken[T]]) extends Connection(c) {
-  val data = RegInit(0.U.asTypeOf(c.gen.data))
+class SingleValueConnection[T <: Data](c: ConnectionConfig[T, SingleToken[T]]) extends Connection(c) {
+  val data = RegInit(0.U.asTypeOf(c.gen1))
   val present = RegInit(false.B)
 
   switch(regState) {
@@ -73,34 +74,36 @@ class SingleValueConnection[T <: Data](c: ConnectionConfig[SingleToken[T]]) exte
       }
 
       when (done) {
-        data := 0.U.asTypeOf(c.gen.data)
+        data := 0.U.asTypeOf(c.gen1)
         present := false.B
       }
     }
   }
 }
 
-class ConnectionBuilder[T1 <: Token, T2 <: Connection[T1]](
-                                                                genFunc: ConnectionConfig[T1] => T2,
-                                                                genToken: T1
+class ConnectionBuilder[T1 <: Data, T2 <: Token[T1], T3 <: Connection[T1, T2]] (
+                                                                genFunc: ConnectionConfig[T1,T2] => T3,
+                                                                genData: T1,
+                                                                genToken: T2
                                                                 ) {
-  var upstream: EventWriteMaster[T1] = null
-  var downstreams: ArrayBuffer[Seq[EventReadMaster[T1]]] = ArrayBuffer()
-  def addUpstream(up: EventWriteMaster[T1]): Unit = {
+  var upstream: EventWriteMaster[T1,T2] = null
+  var downstreams: ArrayBuffer[Seq[EventReadMaster[T1,T2]]] = ArrayBuffer()
+  def addUpstream(up: EventWriteMaster[T1, T2]): Unit = {
     require(upstream == null)
     upstream = up
   }
-  def addDownstream(down: Vec[EventReadMaster[T1]]): Unit = {
+  def addDownstream(down: Vec[EventReadMaster[T1,T2]]): Unit = {
     downstreams += down
   }
 
-  def addDownstream(down: EventReadMaster[T1]): Unit = {
+  def addDownstream(down: EventReadMaster[T1,T2]): Unit = {
     downstreams += Seq(down)
   }
 
-  def construct(): T2 = {
+  def construct(): T3 = {
     val config = ConnectionConfig(
-      gen = genToken,
+      gen1 = genData,
+      gen2 = genToken,
       nChans  = downstreams.map(_.length).sum
     )
     val conn = Module(genFunc(config))

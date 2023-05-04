@@ -1,6 +1,7 @@
 package reactor.test
 
 import reactor._
+import reactor.globals._
 
 import chisel3._
 import org.scalatest._
@@ -15,7 +16,8 @@ class TestPort extends AnyFlatSpec with ChiselScalatestTester {
   it should "initialize" in {
     test(new InputPort(
       InputPortConfig(
-        gen = new PureToken,
+        genData = UInt(0.W),
+        genToken = new PureToken,
         nReaders = 1
       )
     )) { c =>
@@ -28,7 +30,7 @@ class TestPort extends AnyFlatSpec with ChiselScalatestTester {
   it should "initialize" in {
     test(new InputPort(
       InputPortConfig(
-        gen = new SingleToken(gen = UInt(8.W)),
+        defData, defToken,
         nReaders = 1
       )
     )) { c =>
@@ -40,7 +42,7 @@ class TestPort extends AnyFlatSpec with ChiselScalatestTester {
   it should "work with multiple readers" in {
     test(new InputPort(
       InputPortConfig(
-        gen = new SingleToken(gen = UInt(8.W)),
+        defData, defToken,
         nReaders = 2
       )
     )).withAnnotations(Seq(WriteVcdAnnotation)) {c =>
@@ -62,7 +64,7 @@ class TestPort extends AnyFlatSpec with ChiselScalatestTester {
   it should "initialize" in {
     test(new OutputPort(
       OutputPortConfig(
-        gen = new SingleToken(gen = UInt(8.W)),
+        defData, defToken,
         nWriters = 1
       )
     )) { c =>
@@ -74,7 +76,7 @@ class TestPort extends AnyFlatSpec with ChiselScalatestTester {
   it should "work with multiple writers" in {
     test(new OutputPort(
       OutputPortConfig(
-        gen = new SingleToken(gen = UInt(8.W)),
+        defData, defToken,
         nWriters = 2
       )
     )).withAnnotations(Seq(WriteVcdAnnotation)) { c =>
