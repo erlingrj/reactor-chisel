@@ -1,16 +1,39 @@
-package reactor
+package reactor.test
 
-import reactor.lib._
+import reactor._
+import reactor.examples.ReactionAddN
+
 import chisel3._
 import org.scalatest._
 import chiseltest._
 import chisel3.experimental.BundleLiterals._
 import chisel3.util._
+import chiseltest.simulator.WriteVcdAnnotation
 import org.scalatest.flatspec.AnyFlatSpec
+import chisel3.experimental.VecLiterals._
 
-object TestReactionDriver {
-  def start(c: Reaction, clk: Clock) = {
-    c.ioCtrl.enable.enqueueNow(chiselTypeOf(c.ioCtrl.enable.bits))
-    c.ioCtrl.running.expect(true.B)
+
+
+class TestReaction extends AnyFlatSpec with ChiselScalatestTester {
+  behavior of "R1"
+  it should "initialize" in {
+    test(new ReactionAddN(1)).withAnnotations(Seq(WriteVcdAnnotation)) { c =>
+      implicit val clk = c.clock
+      clk.step(5)
+      c.in.fire.expect(false.B)
+      c.out.req.valid.expect(false.B)
+    }
+  }
+
+  it should "fire and consume" in {
+    test(new ReactionAddN(1)).withAnnotations(Seq(WriteVcdAnnotation)) { c =>
+      implicit val clk = c.clock
+      clk.step(5)
+      fork {
+        ReactorSim.readSlave(c.io.in, 13.U)
+      }.fork.withRegion(Monitor) {
+        ReactorSim.writeSlave(c.io.out, 14.U)
+      }.joinAndStep(clk)
+    }
   }
 }

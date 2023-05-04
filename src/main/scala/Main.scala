@@ -25,17 +25,24 @@ object Settings {
 }
 
 object ChiselMain {
+
   def main(args: Array[String]): Unit = {
-    val targetDir: String = args(0)
+    require(args.length == 2)
+    val example: String = args(0)
+    val targetDir: String = args(1)
 
     val platformInst = {f: (PlatformWrapperParams => GenericAccelerator) => new VerilatedTesterWrapper(f, targetDir)}
-    val accInst = {p: PlatformWrapperParams => new VaddStreamReactor(p,5) }
+    val accInst = (example match {
+      case "TopReactorEx" => Some({p: PlatformWrapperParams => new TopReactorEx })
+      case _ => None
+    }).get
 
     val verilogString = (new chisel3.stage.ChiselStage).emitVerilog(platformInst(accInst))
     Settings.writeVerilogToFile(verilogString, targetDir + "/TesterWrapper.v")
     val resRoot = Paths.get("src/main/resources").toAbsolutePath.toString
-    val resTestRoot = resRoot + "/TestVaddReactor"
-    fpgatidbits.TidbitsMakeUtils.fileCopy(resRoot + "/Makefile", targetDir)
+    val tidbitsResRoot = Paths.get("fpga-tidbits/src/main/resources").toAbsolutePath.toString
+    val resTestRoot = resRoot + "/" +  example
+    fpgatidbits.TidbitsMakeUtils.fileCopy(tidbitsResRoot + "/script/VerilatorMakefile", targetDir + "/Makefile")
     fpgatidbits.TidbitsMakeUtils.fileCopy(resTestRoot + "/main.cpp", targetDir)
   }
 }

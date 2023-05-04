@@ -2,119 +2,149 @@ package reactor
 
 import chisel3._
 import chisel3.util._
-import chisel3.experimental.DataMirror.directionOf
 
+import scala.collection.mutable.ArrayBuffer
 
-
+import reactor.Reaction._
 case class ReactionConfig(
-  triggers : Array[PortIOConfig[Data]],
-  antiDependencies : Array[PortIOConfig[Data]],
-  dependencies : Array[PortIOConfig[Data]],
-  states : Array[ReactorStateConfig[Data]]
-)
+                         nPrecedenceIn: Int = 0,
+                         nPrecedenceOut: Int = 0
+                         )
+abstract class ReactionIO() extends Bundle {}
 
+// FIXME: Hide behind global debug?
+class ReactionStatusIO extends Bundle {
+  val state = Output(UInt(4.W))
+}
 
-class ReactionCtrlIO extends Bundle {
-  // Control signals
-  val done = Output(Bool())
-  val running = Output(Bool())
-  val enable = Flipped(Decoupled())
+class ReactionPrecedencePorts(c: ReactionConfig) extends Bundle {
+  val precedenceIn = Vec(c.nPrecedenceIn, new EventReadMaster(new PureToken))
+  val precedenceOut = Vec(c.nPrecedenceOut, new EventWriteMaster(new PureToken))
 
-  def tieOff: Unit = {
-    if (directionOf(done) == ActualDirection.Output) {
-      done := false.B
-      running := false.B
-      enable.ready := false.B
-    } else
-    {
-      enable.valid := false.B
-    }
+  def driveDefaults() = {
+    precedenceIn.foreach(_.driveDefaults())
+    precedenceOut.foreach(_.driveDefaults())
   }
 }
+abstract class Reaction(val c: ReactionConfig = ReactionConfig(0,0)) extends Module {
+  val io: ReactionIO
+  val precedenceIO = IO(new ReactionPrecedencePorts(c))
+  val statusIO = IO(new ReactionStatusIO())
 
-class ReactionPortIO(c: ReactionConfig) extends Bundle {
-  val triggers = MixedVec(Seq.tabulate(c.triggers.length)(i => Flipped(new PortOutIO(c.triggers(i)))))
-  val dependencies = MixedVec(Seq.tabulate(c.dependencies.length)(i => Flipped(new PortOutIO(c.dependencies(i)))))
-  val antiDependencies = MixedVec(Seq.tabulate(c.antiDependencies.length)(i => Flipped(new PortInIO(c.antiDependencies(i)))))
-}
+  val triggers: Seq[EventReadMaster[_ <: Token]] = Seq()
+  val dependencies: Seq[EventReadMaster[_ <: Token]] = Seq()
+  val antiDependencies: Seq[EventWriteMaster[_ <: Token]] = Seq()
+  val precedenceIn: Seq[EventReadMaster[PureToken]] = precedenceIO.precedenceIn.toSeq
+  val precedenceOut: Seq[EventWriteMaster[PureToken]] = precedenceIO.precedenceOut.toSeq
 
-class ReactionStateIO(c: ReactionConfig) extends Bundle {
-  val states = MixedVec(Seq.tabulate(c.states.length)(i => Flipped(new ReactorStateIO(c.states(i)))))
-}
+  var reactionsAfter: ArrayBuffer[Reaction] = ArrayBuffer()
+  var reactionsBefore: ArrayBuffer[Reaction] = ArrayBuffer()
 
-abstract class Reaction(c: ReactionConfig) extends Module {
-  val ioCtrl = IO(new ReactionCtrlIO())
-  ioCtrl.tieOff
-  val io = IO(new ReactionPortIO(c))
-  io.triggers.foreach(_.reactionTieOff)
-  io.dependencies.foreach(_.reactionTieOff)
-  io.antiDependencies.foreach(_.reactionTieOff)
+  def driveDefaults(): Unit = {
+    triggers.foreach(_.driveDefaults())
+    dependencies.foreach(_.driveDefaults())
+    antiDependencies.foreach(_.driveDefaults())
+    precedenceIn.foreach(_.driveDefaults())
+    precedenceOut.foreach(_.driveDefaults())
+  }
 
-  val ioState = IO(new ReactionStateIO(c))
-  ioState.states.foreach(_.tieOffExt)
+  // Conditions to fire a reaction
+  def fireReaction: Bool = {
+      triggers.map(_.resp.valid).reduce(_ && _) &&
+        dependencies.map(_.resp.valid).foldLeft(true.B)(_ && _)  &&
+        precedenceIn.map(_.resp.valid).foldLeft(true.B)(_ && _)
+  }
 
+  // FIXME: Do operator overloading so we can do "r1 > r2 > r3 > r4`
+  // Function for connecting a downstream precedence reaction.
+  // The function is used like `upstream.precedes(downstream)`.
+  var precedenceOutIdx = 0
+  def precedes(down: Reaction): Unit = {
+    require(precedenceOut.length > precedenceOutIdx, s"[Reaction.scala] Only ${precedenceOut.length} precedenceOut ports")
 
-  // Reset signal to reset all Registers in the reactionBody
-  val reactionEnable = Wire(Bool())
-  reactionEnable := false.B
-  val reactionDone = Wire(Bool())
-  reactionDone := false.B
+    // Create connection module for connecting the ports
+    val connection = Module(new PureConnection(ConnectionConfig(
+      gen = new PureToken(),
+      nChans = 1
+    )))
 
-  // TODO: reactionBody should return Bool saying whether it is done or not
+    connection.io.write <> precedenceOut(precedenceOutIdx)
+
+    down._isPrecededBy(this, connection.io.reads(0))
+
+    // Store a reference to this downstream reaction
+    reactionsAfter += down
+
+    precedenceOutIdx += 1
+  }
+
+  // This is a private API for connecting upstream/downstream precedence reactions
+  // The user uses `upstream.precedes(downstream)` and internally the upstream
+  // makes a `_isPrecededBy
+  var precedenceInIdx = 0
+  private def _isPrecededBy(upstreamReaction: Reaction, upstreamPort: EventReadSlave[PureToken]): Unit = {
+    require(precedenceIn.length > precedenceInIdx)
+    precedenceIn(precedenceInIdx) <> upstreamPort
+    reactionsBefore += upstreamReaction
+  }
+
+  def hasPresentTriggers: Bool = {
+    triggers.map(_.resp.present).reduce(_ || _)
+  }
+  // FIXME: This function should return a Bool which is true when it is done
   def reactionBody: Unit
 
-  val sIdle :: sRunning :: sDone :: Nil = Enum(3)
-  val regStateTop = RegInit(sIdle)
-  val regCycles = RegInit(0.U(16.W))
+  val reactionEnable = WireDefault(false.B)
+  val reactionDone = WireDefault(false.B)
+  val regState = RegInit(sIdle)
+  val regCycles = RegInit(0.U(32.W))
 
 
-  // The reactionMain is the "mainLoop" of the Reaction. To avoid some quirks in Chisel'
-  //  this is wrapped in a function and called from the child class
-  def reactionMain: Unit = {
-    switch(regStateTop) {
+  def reactionMain(): Unit = {
+    require(triggers.length > 0, "[Reaction.scala] Reaction has no triggers")
+    driveDefaults()
 
+    switch(regState) {
       is(sIdle) {
-        ioCtrl.running := false.B
-        ioCtrl.done := false.B
         regCycles := 0.U
 
-        when(ioCtrl.enable.valid) {
-          ioCtrl.enable.ready := true.B
-          // If there is data present at any port go to running.
-          when(io.triggers.map(_.present).reduce(_||_)) {
-            regStateTop := sRunning
-          } otherwise {
-            // If there is nothing at the trigger ports, then
-            //  go directly done
-            regStateTop := sDone
+        when(fireReaction) {
+          when(hasPresentTriggers) {
+            regState := sRunning
+          }.otherwise {
+            regState := sDone
           }
-
         }
       }
 
       is(sRunning) {
         regCycles := regCycles + 1.U
-        ioCtrl.running := true.B
-        ioCtrl.done := false.B
         reactionEnable := true.B
-
         withReset(!reactionEnable) {
           reactionBody
         }
-
         when(reactionDone) {
-          regStateTop := sDone
+          regState := sDone
         }
       }
 
       is(sDone) {
-        ioCtrl.done := true.B
-        ioCtrl.running := true.B
-        regStateTop := sIdle
+        antiDependencies.foreach(_.fire := true.B)
+        precedenceOut.foreach(_.fire := true.B)
+        triggers.foreach(_.fire := true.B)
+        precedenceIn.foreach(_.fire := true.B)
+        precedenceOut.foreach(_.fire := true.B)
+        regState := sIdle
+
       }
     }
   }
-
   assert(!(regCycles > 200.U), "[Reaction] Reaction was running for over 200cc assumed error")
+
+  // FIXME: These debug signals should be optional
+  statusIO.state := regState
 }
 
+object Reaction {
+  val sIdle :: sRunning :: sDone :: Nil = Enum(3)
+}
