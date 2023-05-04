@@ -18,7 +18,7 @@ class DualWithContained extends Reactor {
   out << r2.io.out
 
   // Precedence relationships
-  r1 -> r2
+  r1 > r2
 
   val contained = Module(new DualAddN)
 

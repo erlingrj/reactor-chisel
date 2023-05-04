@@ -82,7 +82,7 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
     precedenceOutIdx += 1
   }
 
-  def -> (down: Reaction): Reaction = {
+  def > (down: Reaction): Reaction = {
     precedes(down)
     down
   }
