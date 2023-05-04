@@ -56,6 +56,12 @@ abstract class Connection[T1 <: Data, T2 <: Token[T1]](c: ConnectionConfig[T1, T
 
 class PureConnection(c : ConnectionConfig[UInt,PureToken]) extends Connection(c) {
 
+  // In the PureConnection, there is no absent/present, so present is always high when we fire
+  when (regState === sToken) {
+    for (i <- 0 until c.nChans) {
+      io.reads(i).resp.present := regTokens(i)
+    }
+  }
 }
 class SingleValueConnection[T <: Data](c: ConnectionConfig[T, SingleToken[T]]) extends Connection(c) {
   val data = RegInit(0.U.asTypeOf(c.gen1))
@@ -107,6 +113,7 @@ class ConnectionBuilder[T1 <: Data, T2 <: Token[T1], T3 <: Connection[T1, T2]] (
     addUpstream(up)
   }
 
+
   def construct(): T3 = {
     val config = ConnectionConfig(
       gen1 = genData,
@@ -123,5 +130,16 @@ class ConnectionBuilder[T1 <: Data, T2 <: Token[T1], T3 <: Connection[T1, T2]] (
       }
     }
     conn
+  }
+}
+
+// Convenience class to generate the PureConnections more easy
+class PureConnectionBuilder extends ConnectionBuilder(
+  genFunc = {(c: ConnectionConfig[UInt, PureToken]) => new PureConnection(c)},
+  genData = UInt(0.W),
+  genToken = new PureToken
+) {
+  def <<(up: Timer): Unit = {
+    addUpstream(up.io.trigger)
   }
 }

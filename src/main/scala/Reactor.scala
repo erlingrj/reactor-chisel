@@ -7,6 +7,8 @@ import reactor.Reaction
 package object globals {
   val defData = UInt(8.W)
   val defToken = new SingleToken(defData)
+  val pureData = UInt(8.W)
+
 }
 
 abstract class ReactorIO extends Bundle {}

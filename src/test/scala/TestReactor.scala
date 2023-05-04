@@ -13,7 +13,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 
 class TestReactor extends AnyFlatSpec with ChiselScalatestTester {
-  behavior of "Reactor1"
+  behavior of "DualAddN"
   it should "initialize" in {
     test(new DualAddN) { c =>
       implicit val clk = c.clock
@@ -32,7 +32,7 @@ class TestReactor extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 
-  behavior of "Reactor2"
+  behavior of "DualWithContained"
   it should "initialize" in {
     test(new DualWithContained) { c =>
       implicit val clk = c.clock
@@ -55,7 +55,7 @@ class TestReactor extends AnyFlatSpec with ChiselScalatestTester {
       }.join()
     }
   }
-  behavior of "Reactor3"
+  behavior of "DualDataflow"
   it should "initialize" in {
     test(new DualDataflow) { c =>
       implicit val clk = c.clock
@@ -76,6 +76,18 @@ class TestReactor extends AnyFlatSpec with ChiselScalatestTester {
         ReactorSim.writeSlave(c.io.out2, 45.U, fire=false)
         ReactorSim.writeSlave(c.io.out2, 46.U)
       }.join()
+    }
+  }
+  behavior of "Counter"
+  it should "initialize" in {
+    test(new ReactorCounter) { c =>
+      implicit val clk = c.clock
+    }
+  }
+  it should "print some hellos" in {
+    test(new ReactorCounter).withAnnotations(Seq(WriteVcdAnnotation)) { c =>
+      implicit val clk = c.clock
+      clk.step(150)
     }
   }
 }
