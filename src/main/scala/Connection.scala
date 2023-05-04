@@ -85,13 +85,17 @@ class ConnectionBuilder[T1 <: Token, T2 <: Connection[T1]](
                                                                 genToken: T1
                                                                 ) {
   var upstream: EventWriteMaster[T1] = null
-  var downstreams: ArrayBuffer[Vec[EventReadMaster[T1]]] = ArrayBuffer()
+  var downstreams: ArrayBuffer[Seq[EventReadMaster[T1]]] = ArrayBuffer()
   def addUpstream(up: EventWriteMaster[T1]): Unit = {
     require(upstream == null)
     upstream = up
   }
   def addDownstream(down: Vec[EventReadMaster[T1]]): Unit = {
     downstreams += down
+  }
+
+  def addDownstream(down: EventReadMaster[T1]): Unit = {
+    downstreams += Seq(down)
   }
 
   def construct(): T2 = {

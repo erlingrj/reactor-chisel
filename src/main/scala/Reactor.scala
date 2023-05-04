@@ -22,15 +22,15 @@ abstract class Reactor extends Module {
 }
 
 // FIXME: We want numMemPorts to be configurable
-abstract class MainReactorIO(p: PlatformWrapperParams) extends GenericAcceleratorIF(AcceleratorParams(numMemPorts=1),p) {
+abstract class MainReactorIO(p: PlatformWrapperParams) extends GenericAcceleratorIF(AcceleratorParams(numMemPorts=0),p) {
   val start = Input(Bool())
   val done = Output(Bool())
   val running = Output(Bool())
 
   def connectScheduler(s: Scheduler): Unit = {
-    start := s.io.start
+    s.io.start := start
     running := s.io.running
-    s.io.done := done
+    done := s.io.done
   }
 }
 

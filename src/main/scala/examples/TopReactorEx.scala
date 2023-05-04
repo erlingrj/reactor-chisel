@@ -4,52 +4,81 @@ import chisel3._
 import reactor._
 import fpgatidbits.PlatformWrapper._
 
-class TopReactor extends MainReactor(TesterWrapperParams){
+class TopReactorExIO extends MainReactorIO(TesterWrapperParams) {
+  val in = Input(new SwSingleToken(UInt(8.W)))
+  val out1 = Output(new SwSingleToken(UInt(8.W)))
+  val out2 = Output(new SwSingleToken(UInt(8.W)))
+}
+class TopReactorEx extends MainReactor(TesterWrapperParams) {
+  val accelParams = AcceleratorParams(0)
   val gen = new SingleToken(UInt(8.W))
 
+  // Top-level, software-facing IO
+  val io = IO(new TopReactorExIO())
+  io.signature := makeDefaultSignature()
+
+  // Contained Reactors
   val c1 = Module(new DualWithContained)
   val c2 = Module(new DualAddN)
   val c3 = Module(new DualAddN)
 
-  // Connect c1->c2
-  val c1_c2_gen = gen
-  val c1_c2_func = (c: ConnectionConfig[SingleToken[UInt]]) => new SingleValueConnection(c)
-  val c1_c2_builder = new ConnectionBuilder(c1_c2_func, c1_c2_gen)
-  c1_c2_builder.addUpstream(c1.io.out1)
-  c1_c2_builder.addDownstream(c2.io.in)
-  val c1_c2_conn = c1_c2_builder.construct()
+  // Scheduler
+  val scheduler = Module(new Scheduler(SchedulerConfig(nTopInputPorts = 1, nTopOutputPorts = 2)))
+  io.connectScheduler(scheduler)
 
-  // Connect c1->c3
-  val c1_c3_gen = gen
-  val c1_c3_func = (c: ConnectionConfig[SingleToken[UInt]]) => new SingleValueConnection(c)
-  val c1_c3_builder = new ConnectionBuilder(c1_c3_func, c1_c3_gen)
-  c1_c3_builder.addUpstream(c1.io.out2)
-  c1_c3_builder.addDownstream(c3.io.in)
-  val c1_c3_conn = c1_c3_builder.construct()
+  // Top-level ports
+  val in = Module(new TopInputPort(TopInputPortConfig(new SwSingleToken(UInt(8.W)))))
+  val out1 = Module(new TopOutputPort(TopOutputPortConfig(new SwSingleToken(UInt(8.W)))))
+  val out2 = Module(new TopOutputPort(TopOutputPortConfig(new SwSingleToken(UInt(8.W)))))
 
-  // Handle pass-through input connections
-  val in1PT = new InputPortPassthroughBuilder(gen)
-  in1PT.declareDownstream(c1.io.in)
+  // Connect top-level ports to scheduler
+  scheduler.connect(in)
+  scheduler.connect(out1)
+  scheduler.connect(out2)
 
-  // Create top-level IO now that we have all port info
-  class Reactor2IO extends ReactorIO {
-    val in = Vec(0 + in1PT.width, new EventReadMaster(gen))
-    val out1 = new EventWriteMaster(gen)
-    val out2 = new EventWriteMaster(gen)
-  }
+  // Connect top-level ports to top-level IO
+  in.io.in <> io.in
+  out1.io.out <> io.out1
+  out2.io.out <> io.out2
 
-  val io = IO(new Reactor2IO)
+  // Connections
+  val c_in = new ConnectionBuilder(
+    (c: ConnectionConfig[SingleToken[UInt]]) => new SingleValueConnection(c),
+    new SingleToken(UInt(8.W))
+  )
+  c_in.addUpstream(in.io.out)
+  c_in.addDownstream(c1.io.in)
+  c_in.construct()
 
-  // Connect pass through ports
-  in1PT.declareInput(io.in.drop(0))
+  val c_c1_c2 = new ConnectionBuilder(
+    (c: ConnectionConfig[SingleToken[UInt]]) => new SingleValueConnection(c),
+    new SingleToken(UInt(8.W))
+  )
+  c_c1_c2.addUpstream(c1.io.out1)
+  c_c1_c2.addDownstream(c2.io.in)
+  c_c1_c2.construct()
 
-  // Handle pass-through output ports
-  c2.io.out <> io.out1
-  c3.io.out <> io.out2
+  val c_c1_c3 = new ConnectionBuilder(
+    (c: ConnectionConfig[SingleToken[UInt]]) => new SingleValueConnection(c),
+    new SingleToken(UInt(8.W))
+  )
+  c_c1_c3.addUpstream(c1.io.out2)
+  c_c1_c3.addDownstream(c3.io.in)
+  c_c1_c3.construct()
 
-  // Construct the pass-through connection
-  in1PT.construct()
+  val c_out1 = new ConnectionBuilder(
+    (c: ConnectionConfig[SingleToken[UInt]]) => new SingleValueConnection(c),
+    new SingleToken(UInt(8.W))
+  )
+  c_out1.addUpstream(c2.io.out)
+  c_out1.addDownstream(out1.io.in)
+  c_out1.construct()
 
-  reactorMain
+  val c_out2 = new ConnectionBuilder(
+    (c: ConnectionConfig[SingleToken[UInt]]) => new SingleValueConnection(c),
+    new SingleToken(UInt(8.W))
+  )
+  c_out2.addUpstream(c3.io.out)
+  c_out2.addDownstream(out2.io.in)
+  c_out2.construct()
 }
-

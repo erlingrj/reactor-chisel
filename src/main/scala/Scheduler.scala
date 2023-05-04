@@ -16,10 +16,17 @@ class SchedulerIO(c: SchedulerConfig) extends Bundle {
   val running = Output(Bool())
   val fireOut = Vec(c.nTopOutputPorts, Input(Bool()))
   val fireIn = Vec(c.nTopInputPorts, Output(Bool()))
+
+  def driveDefaults() = {
+    done := false.B
+    running := false.B
+    fireIn.foreach(_ := false.B)
+  }
 }
 
 class Scheduler(c: SchedulerConfig) extends Module {
   val io = IO(new SchedulerIO(c))
+  io.driveDefaults()
 
   val sIdle :: sRunning :: sDone :: Nil = Enum(3)
   val regState = RegInit(sIdle)
@@ -54,5 +61,19 @@ class Scheduler(c: SchedulerConfig) extends Module {
       regFired.foreach(_:=false.B)
       regState := sIdle
     }
+  }
+
+  var outputIdx = 0
+  var inputIdx = 0
+  def connect(in: TopInputPort[_ <: Data]): Unit = {
+    require(inputIdx < io.fireOut.length)
+    in.io.fire := io.fireIn(inputIdx)
+    inputIdx += 1
+  }
+
+  def connect(out: TopOutputPort[_ <: Data]): Unit = {
+    require(outputIdx < io.fireOut.length)
+    io.fireOut(outputIdx) := out.io.fire
+    outputIdx += 1
   }
 }

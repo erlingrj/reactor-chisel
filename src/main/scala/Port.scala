@@ -191,15 +191,20 @@ case class TopInputPortConfig[T <: SwToken](
 
 class TopInputPortIO[T <: Data](c: TopInputPortConfig[SwSingleToken[T]]) extends Bundle {
   val fire = Input(Bool())
-  val in = Input(new SwSingleToken(c.gen))
-  val out = new EventWriteMaster(new SwSingleToken(c.gen))
+  val in = Input(new SwSingleToken(c.gen.data))
+  val out = new EventWriteMaster(new SingleToken(c.gen.data))
+
+  def driveDefaults() = {
+    out.driveDefaults()
+  }
 }
 class TopInputPort[T <: Data](c: TopInputPortConfig[SwSingleToken[T]]) extends Module {
   val io = IO(new TopInputPortIO(c))
+  io.driveDefaults()
 
   when(io.fire) {
     io.out.req.valid := true.B
-    io.out.req.token := io.in.data
+    io.out.req.token.data := io.in.data
     io.out.req.present := io.in.present
     io.out.fire := true.B
   }
@@ -212,15 +217,25 @@ case class TopOutputPortConfig[T <: SwToken](
 
 class TopOutputPortIO[T <: Data](c: TopOutputPortConfig[SwSingleToken[T]]) extends Bundle {
   val fire = Output(Bool())
-  val out = Output(new SwSingleToken(c.gen))
-  val in = new EventReadMaster(new SwSingleToken(c.gen))
+  val out = Output(c.gen)
+  val in = new EventReadMaster(new SingleToken(c.gen.data))
+
+  def driveDefaults() = {
+    in.driveDefaults()
+    fire := false.B
+    out := 0.U.asTypeOf(c.gen)
+  }
 }
 class TopOutputPort[T <: Data](c: TopOutputPortConfig[SwSingleToken[T]]) extends Module {
   val io = IO(new TopOutputPortIO(c))
+  io.driveDefaults()
+
+  val data = RegInit(0.U.asTypeOf(c.gen))
+  io.out := data
 
   when(io.in.resp.valid) {
-    io.out.data := io.in.resp.token
-    io.out.present := io.in.resp.present
+    data.data := io.in.resp.token.data
+    data.present := io.in.resp.present
     io.fire := true.B
     io.in.fire := true.B
   }
