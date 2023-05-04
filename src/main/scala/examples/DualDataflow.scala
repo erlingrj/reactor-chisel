@@ -11,21 +11,22 @@ class DualDataflow extends Reactor {
 
   // Connect c1->c2
   val c1_c2_func = (c: ConnectionConfig[UInt, SingleToken[UInt]]) => new SingleValueConnection(c)
-  val c1_c2_builder = new ConnectionBuilder(c1_c2_func, defData, defToken)
-  c1_c2_builder.addUpstream(c1.io.out1)
-  c1_c2_builder.addDownstream(c2.io.in)
-  val c1_c2_conn = c1_c2_builder.construct()
+  val c1_c2 = new ConnectionBuilder(c1_c2_func, defData, defToken)
+  c1_c2 << c1.io.out1
+  c1_c2 >> c2.io.in
+  c1_c2.construct()
+
 
   // Connect c1->c3
   val c1_c3_func = (c: ConnectionConfig[UInt, SingleToken[UInt]]) => new SingleValueConnection(c)
-  val c1_c3_builder = new ConnectionBuilder(c1_c3_func, defData, defToken)
-  c1_c3_builder.addUpstream(c1.io.out2)
-  c1_c3_builder.addDownstream(c3.io.in)
-  val c1_c3_conn = c1_c3_builder.construct()
+  val c1_c3 = new ConnectionBuilder(c1_c3_func, defData, defToken)
+  c1_c3 << (c1.io.out2)
+  c1_c3 >> (c3.io.in)
+  c1_c3.construct()
 
   // Handle pass-through input connections
   val in1PT = new InputPortPassthroughBuilder(defData, defToken)
-  in1PT.declareDownstream(c1.io.in)
+  in1PT >> (c1.io.in)
 
   // Create top-level IO now that we have all port info
   class Reactor2IO extends ReactorIO {
@@ -37,7 +38,7 @@ class DualDataflow extends Reactor {
   val io = IO(new Reactor2IO)
 
   // Connect pass through ports
-  in1PT.declareInput(io.in.drop(0))
+  in1PT << io.in
 
   // Handle pass-through output ports
   c2.io.out <> io.out1

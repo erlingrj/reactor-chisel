@@ -139,6 +139,7 @@ class EventReadSlave[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bu
 
 class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (gen1: T1, gen2: T2) extends Bundle {
   val req = Output(new EventWriteReq(gen1,gen2))
+  val ready = Input(Bool())
   val fire = Output(Bool())
   def driveDefaults(): Unit = {
     if (directionOf(fire) == ActualDirection.Output) {
@@ -148,6 +149,7 @@ class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (gen1: T1, gen2: T2) extends
   }
 
   def write(d: T1): Unit = {
+    assert(ready)
     req.valid := true.B
     req.present := true.B
     gen2 match {
@@ -158,6 +160,7 @@ class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (gen1: T1, gen2: T2) extends
   }
 
   def write(d: T1, addr: UInt) = {
+    assert(ready)
     req.valid := true.B
     req.present := true.B
     gen2 match {
@@ -171,10 +174,13 @@ class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (gen1: T1, gen2: T2) extends
 
 class EventWriteSlave[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bundle {
   val req = Input(new EventWriteReq(gen1, gen2))
+  val ready = Output(Bool())
   val fire = Input(Bool())
   def driveDefaults(): Unit = {
     if (directionOf(fire) == ActualDirection.Output) {
       fire := false.B
+    } else {
+      ready := false.B
     }
     req.driveDefaults()
   }

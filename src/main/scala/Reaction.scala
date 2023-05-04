@@ -82,6 +82,10 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
     precedenceOutIdx += 1
   }
 
+  def -> (down: Reaction): Reaction = {
+    precedes(down)
+    down
+  }
   // This is a private API for connecting upstream/downstream precedence reactions
   // The user uses `upstream.precedes(downstream)` and internally the upstream
   // makes a `_isPrecededBy

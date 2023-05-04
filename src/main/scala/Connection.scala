@@ -32,6 +32,7 @@ abstract class Connection[T1 <: Data, T2 <: Token[T1]](c: ConnectionConfig[T1, T
 
   switch(regState) {
     is (sIdle) {
+      io.write.ready := true.B
       when (io.write.fire) {
         regState := sToken
         regTokens.foreach(_ := true.B)
@@ -92,12 +93,18 @@ class ConnectionBuilder[T1 <: Data, T2 <: Token[T1], T3 <: Connection[T1, T2]] (
     require(upstream == null)
     upstream = up
   }
-  def addDownstream(down: Vec[EventReadMaster[T1,T2]]): Unit = {
+  def addDownstream(down: Seq[EventReadMaster[T1,T2]]): Unit = {
     downstreams += down
   }
+  def >>(down: EventReadMaster[T1,T2]): Unit = {
+    addDownstream(Seq(down))
+  }
 
-  def addDownstream(down: EventReadMaster[T1,T2]): Unit = {
-    downstreams += Seq(down)
+  def >>(down: Vec[EventReadMaster[T1, T2]]): Unit = {
+    addDownstream(down)
+  }
+  def <<(up: EventWriteMaster[T1, T2]): Unit = {
+    addUpstream(up)
   }
 
   def construct(): T3 = {

@@ -24,10 +24,10 @@ class TestReactor extends AnyFlatSpec with ChiselScalatestTester {
       implicit val clk = c.clock
       fork {
         ReactorSim.readSlave(c.io.in(0), 42.U)
-      }.fork.withRegion(Monitor) {
+      }.fork {
         ReactorSim.writeSlave(c.io.out, 43.U, fire=false)
         ReactorSim.writeSlave(c.io.out, 44.U)
-      }.joinAndStep(clk)
+      }.join()
 
     }
   }
@@ -46,13 +46,13 @@ class TestReactor extends AnyFlatSpec with ChiselScalatestTester {
         ReactorSim.readSlave(c.io.in(0), 42.U)
       }.fork {
         ReactorSim.readSlave(c.io.in(1), 42.U)
-      }.fork.withRegion(Monitor) {
+      }.fork {
         ReactorSim.writeSlave(c.io.out1, 45.U, fire = false)
         ReactorSim.writeSlave(c.io.out1, 46.U)
-      }.fork.withRegion(Monitor) {
+      }.fork {
         ReactorSim.writeSlave(c.io.out2, 43.U, fire = false)
         ReactorSim.writeSlave(c.io.out2, 44.U)
-      }.joinAndStep(clk)
+      }.join()
     }
   }
   behavior of "Reactor3"
@@ -69,13 +69,13 @@ class TestReactor extends AnyFlatSpec with ChiselScalatestTester {
         ReactorSim.readSlave(c.io.in(0), 42.U)
       }.fork {
         ReactorSim.readSlave(c.io.in(1), 42.U)
-      }.fork.withRegion(Monitor) {
+      }.fork {
         ReactorSim.writeSlave(c.io.out1, 47.U, fire=false)
         ReactorSim.writeSlave(c.io.out1, 48.U)
-      }.fork.withRegion(Monitor) {
+      }.fork {
         ReactorSim.writeSlave(c.io.out2, 45.U, fire=false)
         ReactorSim.writeSlave(c.io.out2, 46.U)
-      }.joinAndStep(clk)
+      }.join()
     }
   }
 }

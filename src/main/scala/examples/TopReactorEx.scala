@@ -58,31 +58,32 @@ class TopReactorEx extends MainReactor(TesterWrapperParams) {
     (c: ConnectionConfig[UInt, SingleToken[UInt]]) => new SingleValueConnection(c),
     defData, defToken,
   )
-  c_c1_c2.addUpstream(c1.io.out1)
-  c_c1_c2.addDownstream(c2.io.in)
+  c_c1_c2 << c1.io.out1
+  c_c1_c2 >> c2.io.in
   c_c1_c2.construct()
 
   val c_c1_c3 = new ConnectionBuilder(
     (c: ConnectionConfig[UInt, SingleToken[UInt]]) => new SingleValueConnection(c),
     defData, defToken
   )
-  c_c1_c3.addUpstream(c1.io.out2)
-  c_c1_c3.addDownstream(c3.io.in)
+  c_c1_c3 << c1.io.out2
+  c_c1_c3 >> c3.io.in
   c_c1_c3.construct()
 
   val c_out1 = new ConnectionBuilder(
     (c: ConnectionConfig[UInt, SingleToken[UInt]]) => new SingleValueConnection(c),
     defData, defToken
   )
-  c_out1.addUpstream(c2.io.out)
-  c_out1.addDownstream(out1.io.in)
+
+  c_out1 << c2.io.out
+  c_out1 >> out1.io.in
   c_out1.construct()
 
   val c_out2 = new ConnectionBuilder(
     (c: ConnectionConfig[UInt, SingleToken[UInt]]) => new SingleValueConnection(c),
     defData, defToken
   )
-  c_out2.addUpstream(c3.io.out)
-  c_out2.addDownstream(out2.io.in)
+  c_out2 << c3.io.out
+  c_out2 >> out2.io.in
   c_out2.construct()
 }
