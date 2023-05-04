@@ -5,10 +5,6 @@
 
 using namespace std;
 
-double sc_time_stamp() {
-    return 0;
-}
-
 int main(int argc, char** argv) {
     cout << "Software driver for TopReactorEx is running" << endl;
     WrapperRegDriver * platform;
