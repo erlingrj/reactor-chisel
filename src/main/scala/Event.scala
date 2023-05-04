@@ -7,6 +7,7 @@ import chisel3.experimental.DataMirror.directionOf
 // This file defined the Event interfaces
 // Events are in reactor-chisel referring to the IO between Connections and Reactor-ports
 
+// FIXME: Implement companion objects to avoid 'new' everywhere
 abstract class Token[T <: Data](gen: T) extends Bundle {
 }
 class PureToken extends Token[UInt](UInt(0.W)) {
@@ -137,8 +138,8 @@ class EventReadSlave[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bu
   }
 }
 
-class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (gen1: T1, gen2: T2) extends Bundle {
-  val req = Output(new EventWriteReq(gen1,gen2))
+class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (genData: T1, genToken: T2) extends Bundle {
+  val req = Output(new EventWriteReq(genData,genToken))
   val ready = Input(Bool())
   val fire = Output(Bool())
   def driveDefaults(): Unit = {
@@ -152,23 +153,29 @@ class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (gen1: T1, gen2: T2) extends
     assert(ready)
     req.valid := true.B
     req.present := true.B
-    gen2 match {
+    genToken match {
       case _: SingleToken[T1] =>
         req.token.asInstanceOf[SingleToken[T1]].data := d
+      case _: PureToken => // OK
       case _ => assert(false.B)
     }
   }
 
-  def write(d: T1, addr: UInt) = {
+  def writeAbsent(): Unit = {
+    assert(ready)
+    req.valid := true.B
+    req.present := false.B
+  }
+
+  def write(d: T1, addr: UInt): Unit = {
     assert(ready)
     req.valid := true.B
     req.present := true.B
-    gen2 match {
+    genToken match {
       case _: ArrayToken[T1] => assert(false.B)
       case _ => assert(false.B)
     }
   }
-
 }
 
 

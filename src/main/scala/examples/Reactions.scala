@@ -3,6 +3,7 @@ package reactor.examples
 
 import chisel3._
 import reactor._
+import reactor.globals._
 import reactor.ReactionApi._
 
 class ReactionAddN(n: Int, c: ReactionConfig = ReactionConfig(0,0)) extends Reaction(c) {
@@ -125,3 +126,21 @@ class ReactionAddMultipleWidths(c: ReactionConfig = ReactionConfig(0,0)) extends
 
   reactionMain()
 }
+class ReactionPurePrint(c: ReactionConfig = ReactionConfig(0,0)) extends Reaction(c) {
+  class IO extends ReactionIO {
+    val t = new EventReadMaster(pureData, new PureToken)
+  }
+  val io = IO(new IO)
+  override val triggers = Seq(io.t)
+
+  // Bring the port into scope
+  val t = io.t
+
+  def reactionBody ={
+    printf("TRIGGERED\n")
+    reactionDone := true.B
+  }
+
+  reactionMain()
+}
+

@@ -54,8 +54,25 @@ abstract class Connection[T1 <: Data, T2 <: Token[T1]](c: ConnectionConfig[T1, T
   }
 }
 
+// A pure connection should just be used by Timers and Precedence ports. It does not support multiple writers
+// The fire and valid and present signals must be asserted the same
 class PureConnection(c : ConnectionConfig[UInt,PureToken]) extends Connection(c) {
-
+  val regPresent = RegInit(VecInit(Seq.fill(c.nChans)(false.B)))
+  switch (regState) {
+    is (sIdle) {
+     when (io.write.fire) {
+         regPresent.foreach(_ := io.write.req.present)
+     }
+    }
+    is (sToken) {
+      for (i <- 0 until c.nChans) {
+        when (io.reads(i).fire) {
+          regPresent(i) := false.B
+        }
+        io.reads(i).resp.present := regPresent(i)
+      }
+    }
+  }
 }
 class SingleValueConnection[T <: Data](c: ConnectionConfig[T, SingleToken[T]]) extends Connection(c) {
   val data = RegInit(0.U.asTypeOf(c.gen1))
@@ -107,6 +124,7 @@ class ConnectionBuilder[T1 <: Data, T2 <: Token[T1], T3 <: Connection[T1, T2]] (
     addUpstream(up)
   }
 
+
   def construct(): T3 = {
     val config = ConnectionConfig(
       gen1 = genData,
@@ -123,5 +141,16 @@ class ConnectionBuilder[T1 <: Data, T2 <: Token[T1], T3 <: Connection[T1, T2]] (
       }
     }
     conn
+  }
+}
+
+// Convenience class to generate the PureConnections more easy
+class PureConnectionBuilder extends ConnectionBuilder(
+  genFunc = {(c: ConnectionConfig[UInt, PureToken]) => new PureConnection(c)},
+  genData = UInt(0.W),
+  genToken = new PureToken
+) {
+  def <<(up: Timer): Unit = {
+    addUpstream(up.io.trigger)
   }
 }
