@@ -26,8 +26,10 @@ class ReactionPrecedencePorts(c: ReactionConfig) extends Bundle {
     precedenceOut.foreach(_.driveDefaults())
   }
 }
+
+class ReactionStatePorts()
+
 abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Module {
-  import ReactionApi.{lf_set, lf_get, lf_present}
   val io: ReactionIO
   val precedenceIO = IO(new ReactionPrecedencePorts(c))
   val statusIO = IO(new ReactionStatusIO())
@@ -35,6 +37,7 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
   val triggers: Seq[EventReadMaster[ _<: Data, _ <: Token[_<:Data]]] = Seq()
   val dependencies: Seq[EventReadMaster[ _<: Data, _ <: Token[_<:Data]]] = Seq()
   val antiDependencies: Seq[EventWriteMaster[ _<: Data, _ <: Token[_<:Data]]] = Seq()
+  val states: Seq[StateReadWriteMaster[_ <: Data, _ <: Token[_<:Data]]] = Seq()
 
   val precedenceIn: Seq[EventReadMaster[UInt, PureToken]] = precedenceIO.precedenceIn.toSeq
   val precedenceOut: Seq[EventWriteMaster[UInt, PureToken]] = precedenceIO.precedenceOut.toSeq

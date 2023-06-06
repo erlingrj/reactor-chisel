@@ -126,6 +126,7 @@ class ConnectionBuilder[T1 <: Data, T2 <: Token[T1], T3 <: Connection[T1, T2]] (
 
 
   def construct(): T3 = {
+    // FIXME: Also support empty connections.
     val config = ConnectionConfig(
       gen1 = genData,
       gen2 = genToken,

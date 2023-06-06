@@ -23,6 +23,7 @@ abstract class Reactor extends Module {
   val outPorts: Seq[OutputPort[_ <: Data, _ <: Token[_<: Data]]] = Seq()
   val connections: Seq[Connection[_ <: Data,_ <: Token[_<: Data]]] = Seq()
   val childReactors: Seq[Reactor] = Seq()
+  val states: Seq[State[_ <: Data, _ <: Token[_ <: Data]]] = Seq()
 
   def reactorMain: Unit = {
     assert(util.PopCount(reactions.map(_.statusIO.state === Reaction.sRunning)) <= 1.U, "[Reactor.scala] Mutual exclusion between reactions not preserved")
