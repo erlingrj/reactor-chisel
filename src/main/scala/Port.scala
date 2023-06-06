@@ -6,10 +6,18 @@ import chisel3.util._
 
 import scala.collection.mutable.ArrayBuffer
 
+/**
+ * Ports in reactor-chisel are not directly mapped to the LF port concept. In reactor-chisel ports are HW modules
+ * living inside each reactor facilitating communication between the reactions and the Connection objects. Ports
+ * are mainly concerned with arbitrating access to the Connection (this is also handled by the mutual exclusion
+ * mechanisms.
+ *
+ * The ReactorPortIO is more accurately mapped to the LF Port concept
+ * */
 
-abstract class ReactorPortIO[T1 <: Data, T2 <: Token[T1]] extends Bundle {
 
-}
+abstract class ReactorPortIO[T1 <: Data, T2 <: Token[T1]] extends Bundle {}
+
 case class InputPortConfig[T1 <: Data, T2 <: Token[T1]] (
                                    genData: T1,
                                    genToken : T2,

@@ -4,9 +4,6 @@ import fpgatidbits.PlatformWrapper._
 
 import java.nio.file.Paths
 
-
-
-
 object Settings {
   def writeVerilogToFile(verilog: String, path: String) = {
     import java.io._

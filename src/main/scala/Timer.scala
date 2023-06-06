@@ -60,3 +60,13 @@ class Timer(c: TimerConfig, others: Seq[TimerConfig] = Seq()) extends Module {
     regCountdownMe := c.period.U
   }
 }
+
+class TimerBuilder(val offset: Int, val period: Int) {
+
+
+
+  def
+
+}
+
+class GlobalTimer(cfgs: Seq[TimerConfig])

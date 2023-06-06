@@ -59,8 +59,8 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
   }
 
   // FIXME: Do operator overloading so we can do "r1 > r2 > r3 > r4`
-  // Function for connecting a downstream precedence reaction.
-  // The function is used like `upstream.precedes(downstream)`.
+  //  Function for connecting a downstream precedence reaction.
+  //  The function is used like `upstream.precedes(downstream)`.
   var precedenceOutIdx = 0
   def precedes(down: Reaction): Unit = {
     require(precedenceOut.length > precedenceOutIdx, s"[Reaction.scala] Only ${precedenceOut.length} precedenceOut ports")
