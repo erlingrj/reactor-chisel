@@ -167,7 +167,7 @@ class OutputPort[T1 <: Data, T2 <: Token[T1]](c: OutputPortConfig[T1, T2]) exten
 }
 
 /**
- * This class can construct a PassThrough(PT) InputPort. A PT InputPort is used to connect the *input* port of a reactor
+ * This class can construct an Inward connected (IC) InputPort. A  IC InputPort is used to connect the *input* port of a reactor
  * to an *input* port of a contained child reactor. We use a builder because the *width* of these PT port is unknown from the
  * perspective of the parent reactor.
  *
@@ -177,22 +177,31 @@ class OutputPort[T1 <: Data, T2 <: Token[T1]](c: OutputPortConfig[T1, T2]) exten
  * 3. Now, use the `width` API to create the IO of the parent reactor
  * 4. use `declareInput` to connect the IO of the parent reactor
  * 5. `construct` to build the connection
- * @tparam T
+ * @tparam T1
  *
  */
-class InputPortPassthroughBuilder[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) {
+class InputPortInwardConnectionFactory[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) extends CircuitFactory {
 
+  // Array of the downstream Input ports of contained reactors
+  // An ArrayBuffer is used to "iteratively" grow this array
   var downstream: ArrayBuffer[EventReadMaster[T1,T2]] = ArrayBuffer()
+
+  // A Seq of Input ports in the parent reactor. Here we use an immutable Seq. Since we only create this
+  // once, at construction.
   var upstream: Seq[EventReadMaster[T1, T2]] = Seq()
 
   def width = downstream.length
+
+  // Declare that a contained input port is downstream. Here the argument is a Seq of EventReadMaster (e.g. input ports)
+  // This is because the contained input port might have multiple "channels" because it itself might have contained reactors
+  // to which it forwards the connection.
   def declareDownstream(down: Seq[EventReadMaster[T1,T2]]) = {
     down.foreach(downstream += _)
   }
+  // Convenient shorthand for declareDownstream
   def >>(down: Seq[EventReadMaster[T1,T2]]) = {
     declareDownstream(down)
   }
-
 
   // Declare the Input port in the parent reactor. Check the width.
   // Either it is equal the number of downstreams, or it is 1 greater (due to an internal port)
@@ -205,13 +214,16 @@ class InputPortPassthroughBuilder[T1 <: Data, T2 <: Token[T1]](genData: T1, genT
     declareInput(up)
   }
 
-  def construct(): Unit = {
+  // This constructs the actual h
+  def construct(): Seq[Module] = {
     val config = InputPortConfig(genData = genData, genToken = genToken, nReaders = 1)
     val inputPorts = Seq.fill(width)(Module(new InputPort(config)))
     for (i <- 0 until width) {
       upstream(i) <> inputPorts(i).io.outward
       inputPorts(i).io.inward(0) <> downstream(i)
     }
+    // FIXME: We should probably return the whole Seq here?
+    inputPorts
   }
 }
 

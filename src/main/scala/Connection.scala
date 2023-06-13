@@ -99,33 +99,35 @@ class SingleValueConnection[T <: Data](c: ConnectionConfig[T, SingleToken[T]]) e
   }
 }
 
-class ConnectionBuilder[T1 <: Data, T2 <: Token[T1], T3 <: Connection[T1, T2]] (
+class ConnectionFactory[T1 <: Data, T2 <: Token[T1], T3 <: Connection[T1, T2]](
                                                                 genFunc: ConnectionConfig[T1,T2] => T3,
                                                                 genData: T1,
                                                                 genToken: T2
-                                                                ) {
-  var upstream: EventWriteMaster[T1,T2] = null
-  var downstreams: ArrayBuffer[Seq[EventReadMaster[T1,T2]]] = ArrayBuffer()
-  def addUpstream(up: EventWriteMaster[T1, T2]): Unit = {
+                                                                ) extends CircuitFactory {
+  var upstream: EventWriter[T1,T2] = null
+  var downstreams: ArrayBuffer[Seq[EventReader[T1,T2]]] = ArrayBuffer()
+  def addUpstream(up: EventWriter[T1,T2]): Unit = {
     require(upstream == null)
     upstream = up
   }
-  def addDownstream(down: Seq[EventReadMaster[T1,T2]]): Unit = {
+  def addDownstream(down: Seq[EventReader[T1,T2]]): Unit = {
     downstreams += down
   }
-  def >>(down: EventReadMaster[T1,T2]): Unit = {
+  def >>(down: EventReader[T1,T2]): Unit = {
     addDownstream(Seq(down))
   }
 
-  def >>(down: Vec[EventReadMaster[T1, T2]]): Unit = {
+  def >>(down: Seq[EventReader[T1, T2]]): Unit = {
     addDownstream(down)
   }
-  def <<(up: EventWriteMaster[T1, T2]): Unit = {
+
+
+  def <<(up: EventWriter[T1, T2]): Unit = {
     addUpstream(up)
   }
 
 
-  def construct(): T3 = {
+  def construct(): Seq[T3] = {
     val config = ConnectionConfig(
       gen1 = genData,
       gen2 = genToken,
@@ -140,17 +142,13 @@ class ConnectionBuilder[T1 <: Data, T2 <: Token[T1], T3 <: Connection[T1, T2]] (
         idx += 1
       }
     }
-    conn
+    Seq(conn)
   }
 }
 
 // Convenience class to generate the PureConnections more easy
-class PureConnectionBuilder extends ConnectionBuilder(
+class PureConnectionFactory extends ConnectionFactory(
   genFunc = {(c: ConnectionConfig[UInt, PureToken]) => new PureConnection(c)},
   genData = UInt(0.W),
   genToken = new PureToken
-) {
-  def <<(up: Timer): Unit = {
-    addUpstream(up.io.trigger)
-  }
-}
+) {}

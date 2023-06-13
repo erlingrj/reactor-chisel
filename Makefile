@@ -1,15 +1,20 @@
 # Makefile for building FPGA emulations and circuits
 SBT ?= sbt
-BUILD_PATH ?= build
-TOP ?= TopReactorEx
+TOP ?= ReactorCounter
+PROGRAM_TYPE ?= standalone
+BUILD_PATH ?= build/$(TOP)
+
+GENERATED_VERILOG=$(BUILD_PATH)/ReactorChisel.v
 
 all: build
 
 run: build
 	make -C $(BUILD_PATH) run
 
-build:
-	$(SBT) "run $(TOP) $(BUILD_PATH)"
+build: $(GENERATED_VERILOG)
+
+$(GENERATED_VERILOG):
+	$(SBT) "run $(PROGRAM_TYPE) $(TOP) $(BUILD_PATH)"
 
 test:
 	$(SBT) test
@@ -20,4 +25,8 @@ integration-test:
 clean:
 	rm -rf $(BUILD_PATH)
 
-.phony: run build test integration-tests clean
+rebuild: clean build
+rerun: clean run
+
+
+.phony: run build test integration-tests clean rebuild rerun
