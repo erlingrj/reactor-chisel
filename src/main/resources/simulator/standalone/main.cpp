@@ -9,6 +9,8 @@ vluint64_t sim_time = 0;
 bool timeout = false;
 vluint64_t timeout_time = 0;
 
+double sc_time_stamp() { return sim_time; }
+
 int main(int argc, char** argv, char** env) {
     bool trace_enabled = false;
     for (int i = 1; i< argc; i++) {
