@@ -6,7 +6,7 @@ tests=("TopReactorEx")
 make clean
 for test in "${tests[@]}"
 do
-  make run TOP="$test"
+  make run TOP="$test" PROGRAM_TYPE=codesign
   if [ $? -ne 0 ]; then
     echo "-----------------------------------------------------------"
     echo "Integration-test FAILED!"
