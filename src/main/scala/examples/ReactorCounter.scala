@@ -7,19 +7,19 @@ import chisel3._
 import chisel3.util._
 
 class ReactorCounter extends Reactor {
-  class Reactor1IO extends ReactorIO {}
-
+  class Reactor1IO extends ReactorIO {
+    def plugUnusedPorts() = {}
+  }
 
   val io = IO(new Reactor1IO)
+  val t = new TimerVirtual(TimerConfig(Time.nsec(0), Time.nsec(20)))
   val r = Module(new ReactionPurePrint())
-  val t = Module(new Timer(TimerConfig(0, 20)))
 
-  val c = new PureConnectionBuilder()
-  c << t
-  c >> r.io.t
-  c.construct()
+  t.declareTriggeredReaction(r.t)
 
-  override val reactions = Seq(r)
+  reactions = Seq(r)
+  localTimers = Seq(t)
+  val timerIO = connectTimersAndCreateIO()
 
-  reactorMain
+  reactorMain()
 }

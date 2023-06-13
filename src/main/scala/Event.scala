@@ -9,6 +9,7 @@ import chisel3.experimental.DataMirror.directionOf
 
 // FIXME: Implement companion objects to avoid 'new' everywhere
 abstract class Token[T <: Data](gen: T) extends Bundle {
+  val tag = UInt(64.W) // FIXME: This should not be used alot, because it creates a huge mess.
 }
 class PureToken extends Token[UInt](UInt(0.W)) {
 }
@@ -89,7 +90,8 @@ class EventReadResp[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bun
   }
 }
 
-class EventReadMaster[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bundle {
+class EventReader[T1 <: Data, T2 <: Token[T1]] extends Bundle {}
+class EventReadMaster[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends EventReader[T1,T2] {
   val req = Output(new EventReadReq(gen1,gen2))
   val resp = Input(new EventReadResp(gen1,gen2))
   val fire = Output(Bool())
@@ -124,7 +126,7 @@ class EventReadMaster[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends B
   }
 }
 
-class EventReadSlave[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bundle {
+class EventReadSlave[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends EventReader[T1, T2] {
   val req = Input(new EventReadReq(gen1, gen2))
   val resp = Output(new EventReadResp(gen1, gen2))
   val fire = Input(Bool())
@@ -138,7 +140,9 @@ class EventReadSlave[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bu
   }
 }
 
-class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (genData: T1, genToken: T2) extends Bundle {
+class EventWriter[T1 <: Data, T2 <: Token[T1]] extends Bundle {}
+
+class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (genData: T1, genToken: T2) extends EventWriter[T1,T2] {
   val req = Output(new EventWriteReq(genData,genToken))
   val ready = Input(Bool())
   val fire = Output(Bool())
@@ -179,7 +183,7 @@ class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (genData: T1, genToken: T2) 
 }
 
 
-class EventWriteSlave[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bundle {
+class EventWriteSlave[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends EventWriter[T1,T2] {
   val req = Input(new EventWriteReq(gen1, gen2))
   val ready = Output(Bool())
   val fire = Input(Bool())

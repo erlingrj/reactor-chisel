@@ -1,11 +1,13 @@
 package reactor
+
+import chisel3._
+import chisel3.experimental.BundleLiterals._
+import chisel3.util._
+
 import reactor.examples._
 import fpgatidbits.PlatformWrapper._
 
 import java.nio.file.Paths
-
-
-
 
 object Settings {
   def writeVerilogToFile(verilog: String, path: String) = {
@@ -27,6 +29,38 @@ object Settings {
 object ChiselMain {
 
   def main(args: Array[String]): Unit = {
+    require(args.length > 1)
+    val programType: String = args(0)
+
+    programType match {
+      case "standalone" => mainStandalone(args.drop(1))
+      case "codesign" => mainCodesign(args.drop(1))
+      case _ => require(false)
+    }
+  }
+  def mainStandalone(args: Array[String]): Unit = {
+
+    println(s"Running standalone generator with args")
+    val example: String = args(0)
+    val targetDir = if (args.length > 2) args(1) else s"build/$example"
+
+    val mainReactorFunc = (example match {
+      case "ReactorCounter" => Some(() => new ReactorCounter())
+      case _ => None
+    }).get
+
+    println(s"Compiling reactor-chisel with example `$example`")
+    val verilog = (new chisel3.stage.ChiselStage).emitVerilog(new StandaloneMainReactor((mainReactorFunc)))
+    val saveLocation = targetDir + "/ReactorChisel.v"
+    Settings.writeVerilogToFile(verilog, saveLocation)
+    println(s"Wrote the generated verilog to `$saveLocation`")
+
+    // Copy main cpp file for emulation
+    fpgatidbits.TidbitsMakeUtils.fileCopy("src/main/resources/simulator/standalone/main.cpp", targetDir + "/main.cpp")
+    fpgatidbits.TidbitsMakeUtils.fileCopy("src/main/resources/simulator/standalone/Makefile", targetDir + "/Makefile")
+  }
+
+  def mainCodesign(args: Array[String]): Unit = {
     require(args.length == 2)
     val example: String = args(0)
     val targetDir: String = args(1)
