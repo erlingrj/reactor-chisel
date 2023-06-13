@@ -21,5 +21,7 @@ jobs:
         run: sudo apt install verilator -y
       - name: Unit tests
         run: make test
+      - name: Smoke-test
+        run: make run
       - name: Integration-tests
-        run: make integration-test
+        run: ./run-integration-tests.sh

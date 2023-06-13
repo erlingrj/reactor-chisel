@@ -19,14 +19,10 @@ $(GENERATED_VERILOG):
 test:
 	$(SBT) test
 
-integration-test:
-	./integration-tests.sh
-
 clean:
 	rm -rf $(BUILD_PATH)
 
 rebuild: clean build
 rerun: clean run
 
-
-.phony: run build test integration-tests clean rebuild rerun
+.phony: run build test clean rebuild rerun
