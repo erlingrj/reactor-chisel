@@ -5,26 +5,18 @@ import chisel3.experimental.DataMirror.directionOf
 import chisel3.util._
 
 import scala.collection.mutable.ArrayBuffer
-class Tag extends Bundle {
-  val time = UInt(64.W)
-}
 
-object Tag {
-  def FOREVER: Tag = {
-    val tag = Wire(new Tag())
-    tag.time := ~0.U
-    tag
-  }
-}
 
+
+/**
+ * The configuration of a timer
+ * @param offset
+ * @param period
+ */
 case class TimerConfig(
-                      offset: Int,
-                      period: Int
-                      ) {
-  def ==(other: TimerConfig): Boolean = {
-    other.period == period && other.offset == offset
-  }
-}
+                      offset: Time,
+                      period: Time
+                      ) {}
 
 class MainTimerIO(nTimers: Int) extends Bundle {
   val timers = Vec(nTimers, new TimerIO())
@@ -75,13 +67,14 @@ class TimerIO extends Bundle {
  */
 class Timer(c: TimerConfig, others: Seq[TimerConfig] = Seq()) extends Module {
   val io = IO(new TimerIO)
+  val now = RegInit(0.U(64.W))
   io.trigger.driveDefaults()
 
   val othersOpt = others.filterNot(_ == c) // Filter out equal timers
   if (othersOpt.length > 0) {
-    val otherTimerWidths = for (t <- others) yield log2Ceil(1 + Math.max(t.period, t.offset))
+    val otherTimerWidths = for (t <- others) yield log2Ceil(1 + Math.max(t.period.ticks, t.offset.ticks))
 
-    val regCountdownOthers = RegInit(VecInit(Seq.tabulate(othersOpt.length)(i => othersOpt(i).offset.U(otherTimerWidths(i).W))))
+    val regCountdownOthers = RegInit(VecInit(Seq.tabulate(othersOpt.length)(i => othersOpt(i).offset.ticks.U(otherTimerWidths(i).W))))
 
     // Handle other timers
     for (i <- 0 until othersOpt.length) {
@@ -91,21 +84,23 @@ class Timer(c: TimerConfig, others: Seq[TimerConfig] = Seq()) extends Module {
         assert(io.trigger.ready, "[Timer.scala] Absent Timer fired but downstream connection was busy")
         io.trigger.writeAbsent()
         io.trigger.fire := true.B
-        regCountdownOthers(i) := othersOpt(i).period.U
+        regCountdownOthers(i) := othersOpt(i).period.ticks.U
       }
     }
   }
 
-  val myTimerWidth = log2Ceil(1 + Math.max(c.offset, c.period))
-  val regCountdownMe = RegInit(c.offset.U(myTimerWidth.W))
+  val myTimerWidth = log2Ceil(1 + Math.max(c.offset.ticks, c.period.ticks))
+  val regCountdownMe = RegInit((c.offset.ticks).U(myTimerWidth.W))
   // Handle this timer (we do it later because we can then overwrite absent tokens written by the other
   regCountdownMe := regCountdownMe - 1.U
+  now := now + 1.U
 
   when (regCountdownMe === 0.U) {
     assert(io.trigger.ready, "[Timer.scala] Timer fired but downstream connection was busy")
     io.trigger.write(0.U)
+    io.trigger.req.token.tag := now
     io.trigger.fire := true.B
-    regCountdownMe := c.period.U
+    regCountdownMe := (c.period.ticks-1).U
   }
 }
 

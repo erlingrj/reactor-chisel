@@ -28,6 +28,7 @@ class ReactionPrecedencePorts(c: ReactionConfig) extends Bundle {
 }
 abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Module {
   import ReactionApi.{lf_set, lf_get, lf_present}
+  implicit val instance: Reaction = this
   val io: ReactionIO
   val precedenceIO = IO(new ReactionPrecedencePorts(c))
   val statusIO = IO(new ReactionStatusIO())
@@ -42,7 +43,9 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
   var reactionsAfter: ArrayBuffer[Reaction] = ArrayBuffer()
   var reactionsBefore: ArrayBuffer[Reaction] = ArrayBuffer()
 
-  // Bring LF API into scope
+  val logicalTag = RegInit(0.U(64.W))
+  val physicalTag = RegInit(0.U(64.W))
+  physicalTag := physicalTag + 1.U
   def driveDefaults(): Unit = {
     triggers.foreach(_.driveDefaults())
     dependencies.foreach(_.driveDefaults())
@@ -108,6 +111,14 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
   val regCycles = RegInit(0.U(32.W))
 
 
+  // Updates the register containing the current logical tag based on the tag of the incoming events.
+  def updateCurrentLogicalTag() = {
+    for (t <- triggers) {
+      when(t.resp.valid && t.resp.present) {
+        logicalTag := t.resp.token.tag
+      }
+    }
+  }
   def reactionMain(): Unit = {
     require(triggers.length > 0, "[Reaction.scala] Reaction has no triggers")
     driveDefaults()
@@ -117,6 +128,7 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
         regCycles := 0.U
 
         when(fireReaction) {
+          updateCurrentLogicalTag()
           when(hasPresentTriggers) {
             regState := sRunning
           }.otherwise {

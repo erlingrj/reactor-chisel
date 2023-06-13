@@ -20,6 +20,6 @@ clean:
 rebuild: clean build
 
 run: build
-	@./$(EMULATOR_BIN)
+	@./$(EMULATOR_BIN) --timeout 100 --trace
 
 .PHONY: build clean rebuild run

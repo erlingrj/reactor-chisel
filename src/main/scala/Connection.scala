@@ -2,6 +2,7 @@ package reactor
 
 import chisel3._
 import chisel3.util._
+import chisel3.experimental.BundleLiterals._
 
 import scala.collection.mutable.ArrayBuffer
 case class ConnectionConfig[T1 <: Data, T2 <: Token[T1]]
@@ -28,6 +29,7 @@ abstract class Connection[T1 <: Data, T2 <: Token[T1]](c: ConnectionConfig[T1, T
 
   val regState = RegInit(sIdle)
   val regTokens = RegInit(VecInit(Seq.fill(c.nChans)(false.B)))
+  val regTag = RegInit(0.U(64.W))
   val done = WireDefault(false.B)
 
   switch(regState) {
@@ -36,12 +38,14 @@ abstract class Connection[T1 <: Data, T2 <: Token[T1]](c: ConnectionConfig[T1, T
       when (io.write.fire) {
         regState := sToken
         regTokens.foreach(_ := true.B)
+        regTag := io.write.req.token.tag
       }
     }
 
     is (sToken) {
       for (i <- 0 until c.nChans) {
         io.reads(i).resp.valid := regTokens(i)
+        io.reads(i).resp.token.tag := regTag
         when(io.reads(i).fire) {
           regTokens(i) := false.B
         }
@@ -61,7 +65,7 @@ class PureConnection(c : ConnectionConfig[UInt,PureToken]) extends Connection(c)
   switch (regState) {
     is (sIdle) {
      when (io.write.fire) {
-         regPresent.foreach(_ := io.write.req.present)
+       regPresent.foreach(_ := io.write.req.present)
      }
     }
     is (sToken) {

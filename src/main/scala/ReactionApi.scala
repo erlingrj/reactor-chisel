@@ -14,4 +14,6 @@ object ReactionApi {
     port.read()
   }
 
+  def lf_time_logical()(implicit reaction: Reaction): UInt = reaction.logicalTag
+  def lf_time_physical()(implicit reaction: Reaction): UInt = reaction.physicalTag
 }

@@ -9,6 +9,7 @@ import chisel3.experimental.DataMirror.directionOf
 
 // FIXME: Implement companion objects to avoid 'new' everywhere
 abstract class Token[T <: Data](gen: T) extends Bundle {
+  val tag = UInt(64.W) // FIXME: This should not be used alot, because it creates a huge mess.
 }
 class PureToken extends Token[UInt](UInt(0.W)) {
 }
