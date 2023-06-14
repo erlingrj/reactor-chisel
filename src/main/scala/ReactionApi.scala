@@ -14,6 +14,14 @@ object ReactionApi {
     port.read()
   }
 
+  def lf_read[T1 <: Data, T2 <: Token[T1]](state: StateReadWriteMaster[T1,T2]): T1 = {
+    state.read.read()
+  }
+
+  def lf_write[T1 <: Data, T2 <: Token[T1]](state: StateReadWriteMaster[T1, T2], data: T1): Unit = {
+    state.write.write(data)
+  }
+
   def lf_time_logical()(implicit reaction: Reaction): UInt = reaction.logicalTag
   def lf_time_physical()(implicit reaction: Reaction): UInt = reaction.physicalTag
 }

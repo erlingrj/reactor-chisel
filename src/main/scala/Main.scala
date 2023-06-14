@@ -46,6 +46,7 @@ object ChiselMain {
 
     val mainReactorFunc = (example match {
       case "ReactorCounter" => Some(() => new ReactorCounter())
+      case "ReactorCounterWithState" => Some(() => new ReactorCounterWithState())
       case _ => None
     }).get
 

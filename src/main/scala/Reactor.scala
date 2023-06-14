@@ -70,6 +70,12 @@ abstract class Reactor extends Module {
     // Return the newly created ReactorTimerIO.
     timerIO
   }
+
+  // TODO: It would be great to connect states to the reactions ReactionStateIO automatically, by matching names
+  // or even just positions.
+  def connectState(): Unit = {
+
+  }
 }
 
 

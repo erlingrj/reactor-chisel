@@ -20,7 +20,7 @@ test:
 	$(SBT) test
 
 clean:
-	rm -rf $(BUILD_PATH)
+	rm -rf build
 
 rebuild: clean build
 rerun: clean run

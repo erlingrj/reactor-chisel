@@ -11,6 +11,7 @@ case class ReactionConfig(
                          nPrecedenceOut: Int = 0
                          )
 abstract class ReactionIO() extends Bundle {}
+abstract class ReactionStateIO() extends Bundle {}
 
 // FIXME: Hide behind global debug?
 class ReactionStatusIO extends Bundle {
@@ -33,6 +34,8 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
   import ReactionApi.{lf_set, lf_get, lf_present}
   implicit val instance: Reaction = this
   val io: ReactionIO
+  val stateIO: ReactionStateIO
+
   val precedenceIO = IO(new ReactionPrecedencePorts(c))
   val statusIO = IO(new ReactionStatusIO())
 
@@ -70,7 +73,7 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
   // The function is used like `upstream.precedes(downstream)`.
   var precedenceOutIdx = 0
   def precedes(down: Reaction): Unit = {
-    require(precedenceOut.length > precedenceOutIdx, s"[Reaction.scala] Only ${precedenceOut.length} precedenceOut ports")
+    require(precedenceOut.length > precedenceOutIdx, s"[Reaction.scala] Precedence connection failed, only ${precedenceOut.length} precedenceOut ports")
 
     // Create connection module for connecting the ports
     val connection = Module(new PureConnection(ConnectionConfig(
