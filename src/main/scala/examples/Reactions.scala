@@ -137,7 +137,7 @@ class ReactionPurePrint(c: ReactionConfig = ReactionConfig(0,0)) extends Reactio
   val t = io.t
 
   def reactionBody ={
-    printf("TRIGGERED\n")
+    printf("Reaction triggered @ logical tag: %d physical tag: %d\n", lf_time_logical(), lf_time_physical())
     reactionDone := true.B
   }
 

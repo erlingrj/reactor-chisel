@@ -126,7 +126,7 @@ class TestConnectionBuilder extends Module {
   io.in2 <> in2.io.outward
 
   val connFunc = (cfg: ConnectionConfig[UInt, SingleToken[UInt]]) => new SingleValueConnection(cfg)
-  val connBuilder = new ConnectionBuilder(connFunc, defData, defToken)
+  val connBuilder = new ConnectionFactory(connFunc, defData, defToken)
 
   connBuilder.addUpstream(out.io.outward)
   connBuilder.addDownstream(VecInit(in1.io.outward))

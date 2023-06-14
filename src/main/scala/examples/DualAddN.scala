@@ -8,6 +8,8 @@ class DualAddN extends Reactor {
   class Reactor1IO extends ReactorIO {
     val in = Vec(1, new EventReadMaster(defData, defToken))
     val out = new EventWriteMaster(defData, defToken)
+
+    def plugUnusedPorts(): Unit = in.foreach(_.driveDefaults())
   }
 
   val io = IO(new Reactor1IO)
@@ -27,10 +29,13 @@ class DualAddN extends Reactor {
 
   r1 > r2
 
-  override val reactions = Seq(r1, r2)
-  override val inPorts = Seq(in)
-  override val outPorts = Seq(out)
 
-  reactorMain
+  reactions = Seq(r1, r2)
+  inPorts = Seq(in)
+  outPorts = Seq(out)
+
+  val timerIO = connectTimersAndCreateIO()
+
+  reactorMain()
 }
 

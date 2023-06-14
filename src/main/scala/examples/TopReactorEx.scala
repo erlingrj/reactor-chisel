@@ -6,12 +6,12 @@ import reactor.globals._
 
 import fpgatidbits.PlatformWrapper._
 
-class TopReactorExIO extends MainReactorIO(TesterWrapperParams) {
+class TopReactorExIO extends CodesignMainReactorIO(TesterWrapperParams) {
   val in = Input(new SwSingleToken(defData))
   val out1 = Output(new SwSingleToken(defData))
   val out2 = Output(new SwSingleToken(defData))
 }
-class TopReactorEx extends MainReactor(TesterWrapperParams) {
+class TopReactorEx extends CodesignMainReactor(TesterWrapperParams) {
   val accelParams = AcceleratorParams(0)
   val gen = new SingleToken(UInt(8.W))
 
@@ -46,7 +46,7 @@ class TopReactorEx extends MainReactor(TesterWrapperParams) {
   out2.io.out <> io.out2
 
   // Connections
-  val c_in = new ConnectionBuilder(
+  val c_in = new ConnectionFactory(
     (c: ConnectionConfig[UInt, SingleToken[UInt]]) => new SingleValueConnection(c), defData, defToken
   )
 
@@ -54,7 +54,7 @@ class TopReactorEx extends MainReactor(TesterWrapperParams) {
   c_in.addDownstream(c1.io.in)
   c_in.construct()
 
-  val c_c1_c2 = new ConnectionBuilder(
+  val c_c1_c2 = new ConnectionFactory(
     (c: ConnectionConfig[UInt, SingleToken[UInt]]) => new SingleValueConnection(c),
     defData, defToken,
   )
@@ -62,7 +62,7 @@ class TopReactorEx extends MainReactor(TesterWrapperParams) {
   c_c1_c2 >> c2.io.in
   c_c1_c2.construct()
 
-  val c_c1_c3 = new ConnectionBuilder(
+  val c_c1_c3 = new ConnectionFactory(
     (c: ConnectionConfig[UInt, SingleToken[UInt]]) => new SingleValueConnection(c),
     defData, defToken
   )
@@ -70,7 +70,7 @@ class TopReactorEx extends MainReactor(TesterWrapperParams) {
   c_c1_c3 >> c3.io.in
   c_c1_c3.construct()
 
-  val c_out1 = new ConnectionBuilder(
+  val c_out1 = new ConnectionFactory(
     (c: ConnectionConfig[UInt, SingleToken[UInt]]) => new SingleValueConnection(c),
     defData, defToken
   )
@@ -79,7 +79,7 @@ class TopReactorEx extends MainReactor(TesterWrapperParams) {
   c_out1 >> out1.io.in
   c_out1.construct()
 
-  val c_out2 = new ConnectionBuilder(
+  val c_out2 = new ConnectionFactory(
     (c: ConnectionConfig[UInt, SingleToken[UInt]]) => new SingleValueConnection(c),
     defData, defToken
   )
