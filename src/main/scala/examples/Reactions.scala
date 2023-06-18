@@ -14,6 +14,10 @@ class ReactionAddN(n: Int, c: ReactionConfig = ReactionConfig(0,0)) extends Reac
     val out = new EventWriteMaster(gen1, gen2)
   }
   val io = IO(new IO)
+
+  class StateIO extends ReactionStateIO {}
+  val stateIO = IO(new StateIO)
+
   override val triggers = Seq(io.in)
   override val antiDependencies = Seq(io.out)
 
@@ -42,6 +46,10 @@ class ReactionDownsample(rate: Int, c: ReactionConfig = ReactionConfig(0,0)) ext
   }
 
   val io = IO(new IO)
+
+  class StateIO extends ReactionStateIO {}
+  val stateIO = IO(new StateIO)
+
   override val triggers = Seq(io.in)
   override val antiDependencies = Seq(io.out)
 
@@ -68,6 +76,10 @@ class ReactionSum(latency: Int = 0, c: ReactionConfig = ReactionConfig(0,0)) ext
   }
 
   val io = IO(new IO)
+
+  class StateIO extends ReactionStateIO {}
+  val stateIO = IO(new StateIO)
+
   override val triggers = Seq(io.in1, io.in2)
   override val antiDependencies = Seq(io.out)
 
@@ -110,6 +122,10 @@ class ReactionAddMultipleWidths(c: ReactionConfig = ReactionConfig(0,0)) extends
     val out = new EventWriteMaster(out_genData, out_genToken)
   }
   val io = IO(new IO)
+
+  class StateIO extends ReactionStateIO {}
+  val stateIO = IO(new StateIO)
+
   override val triggers = Seq(io.in1, io.in2)
   override val antiDependencies = Seq(io.out)
 
@@ -131,6 +147,10 @@ class ReactionPurePrint(c: ReactionConfig = ReactionConfig(0,0)) extends Reactio
     val t = new EventReadMaster(pureData, new PureToken)
   }
   val io = IO(new IO)
+
+  class StateIO extends ReactionStateIO {}
+  val stateIO = IO(new StateIO)
+
   override val triggers = Seq(io.t)
 
   // Bring the port into scope
@@ -141,6 +161,103 @@ class ReactionPurePrint(c: ReactionConfig = ReactionConfig(0,0)) extends Reactio
     reactionDone := true.B
   }
 
+  reactionMain()
+}
+
+
+class ReactionCountPrint(c: ReactionConfig = ReactionConfig(0,0)) extends Reaction(c) {
+  class IO extends ReactionIO {
+    val t = new EventReadMaster(pureData, new PureToken)
+  }
+
+  val io = IO(new IO)
+
+  class StateIO extends ReactionStateIO {
+    val cnt = new StateReadWriteMaster(defData, defToken)
+  }
+
+  val stateIO = IO(new StateIO)
+  // FIXME: Combine
+  stateIO.cnt.read.driveDefaults()
+  stateIO.cnt.write.driveDefaults()
+
+  override val triggers = Seq(io.t)
+
+  // Bring the port into scope
+  val t = io.t
+
+  // Bring state variables into scope
+  val cnt = stateIO.cnt
+
+  def reactionBody = {
+    printf("Count=%d Reaction triggered @ logical tag: %d physical tag: %d\n", lf_read(cnt), lf_time_logical(), lf_time_physical())
+    lf_write(cnt, lf_read(cnt) + 1.U)
+    reactionDone := true.B
+  }
+
+  reactionMain()
+}
+
+
+class ReactionCount(c: ReactionConfig = ReactionConfig(0,0)) extends Reaction(c) {
+  class IO extends ReactionIO {
+    val t = new EventReadMaster(pureData, new PureToken)
+  }
+
+  val io = IO(new IO)
+
+  class StateIO extends ReactionStateIO {
+    val cnt = new StateReadWriteMaster(defData, defToken)
+  }
+
+  val stateIO = IO(new StateIO)
+  // FIXME: Combine
+  stateIO.cnt.read.driveDefaults()
+  stateIO.cnt.write.driveDefaults()
+
+  override val triggers = Seq(io.t)
+
+  // Bring the port into scope
+  val t = io.t
+
+  // Bring state variables into scop
+  val cnt = stateIO.cnt
+
+  def reactionBody = {
+    lf_write(cnt, lf_read(cnt) + 1.U)
+    reactionDone := true.B
+  }
+  reactionMain()
+}
+
+class ReactionPrintCount(c: ReactionConfig = ReactionConfig(0,0)) extends Reaction(c) {
+  class IO extends ReactionIO {
+    val t = new EventReadMaster(pureData, new PureToken)
+  }
+
+  val io = IO(new IO)
+
+  class StateIO extends ReactionStateIO {
+    val cnt = new StateReadWriteMaster(defData, defToken)
+  }
+
+  val stateIO = IO(new StateIO)
+  // FIXME: Combine
+  stateIO.cnt.read.driveDefaults()
+  stateIO.cnt.write.driveDefaults()
+
+  override val triggers = Seq(io.t)
+
+  // Bring the port into scope
+  val t = io.t
+
+  // Bring state variables into scop
+  val cnt = stateIO.cnt
+
+  def reactionBody = {
+    printf("Count=%d\n", lf_read(cnt))
+    reactionDone := true.B
+  }
   reactionMain()
 }
 

@@ -86,6 +86,11 @@ class InputPort[T1 <: Data, T2 <: Token[T1]](c: InputPortConfig[T1,T2]) extends 
   def >>(down: EventReadMaster[T1, T2]): Unit  = {
     connectDownstream(down)
   }
+
+  def >>(downs: Seq[EventReadMaster[T1, T2]]): Unit = {
+    downs.foreach(connectDownstream(_))
+  }
+
   def <<(up: EventReadMaster[T1,T2]): Unit = {
     connectUpstream(up)
   }
@@ -156,6 +161,10 @@ class OutputPort[T1 <: Data, T2 <: Token[T1]](c: OutputPortConfig[T1, T2]) exten
 
   def <<(up: EventWriteMaster[T1,T2]) :Unit = {
     connectUpstream(up)
+  }
+
+  def <<(ups: Seq[EventWriteMaster[T1, T2]]): Unit = {
+    ups.foreach(connectUpstream(_))
   }
 
   def >>(down: EventWriteMaster[T1, T2]): Unit = {

@@ -62,6 +62,8 @@ class TimerIO extends Bundle {
  *
  * FIXME: We might require some sort of buffering inside the connection in order to support e.g. timers with 1 tick
  *  unalignment. That will require all timers to generate events on both those ticks. And an assertion here will fail
+ *
+ *  FIXME: We should probably find the hyper-period of all the timers and generate ONE schedule for it to run through
  * @param c
  * @param others
  */

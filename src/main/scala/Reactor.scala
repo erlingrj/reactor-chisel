@@ -31,7 +31,6 @@ abstract class Reactor extends Module {
   val timerIO: ReactorTimerIO
 
   // FIXME: Verify that there is a precedence relationship among all reactions, i.e. mutex is guaranteed
-
   // FIXME: These vars should maybe be prependend with _
   var reactions: Seq[Reaction] = Seq()
   var inPorts: Seq[InputPort[_ <: Data, _ <: Token[_<: Data]]] = Seq()
@@ -40,6 +39,7 @@ abstract class Reactor extends Module {
   var childReactors: Seq[Reactor] = Seq()
   var localTimers: Seq[TimerVirtual] = Seq()
   var containedTimers: Seq[TimerVirtual] = Seq()
+  var states: Seq[State[_ <: Data, _ <: Token[_ <: Data]]] = Seq()
 
 
   def reactorMain(): Unit = {
@@ -69,6 +69,12 @@ abstract class Reactor extends Module {
 
     // Return the newly created ReactorTimerIO.
     timerIO
+  }
+
+  // TODO: It would be great to connect states to the reactions ReactionStateIO automatically, by matching names
+  // or even just positions.
+  def connectState(): Unit = {
+
   }
 }
 

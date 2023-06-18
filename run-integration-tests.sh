@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # List of strings to iterate through
-tests_codesign=("TopReactorEx")
-tests_standalone=("ReactorCounter")
+tests_codesign=(TopReactorEx)
+tests_standalone=(ReactorCounter ReactorCounterWithState)
 
 make clean
 for test in "${tests_standalone[@]}"
@@ -15,7 +15,6 @@ do
     echo "-----------------------------------------------------------"
     exit 1
   fi
-  make clean
 done
 
 for test in "${tests_codesign[@]}"
@@ -28,7 +27,6 @@ do
     echo "-----------------------------------------------------------"
     exit 1
   fi
-  make clean
 done
 
 echo "-----------------------------------------------------------"
@@ -36,6 +34,3 @@ echo "Integration-test SUCCEEDED!"
 echo "PASSING STANDALONE TESTS: ${tests_standalone[@]}"
 echo "PASSING CODESIGN TESTS: ${tests_codesign[@]}"
 echo "-----------------------------------------------------------"
-
-
-
