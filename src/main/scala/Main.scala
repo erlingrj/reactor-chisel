@@ -51,7 +51,8 @@ object ChiselMain {
     }).get
 
     println(s"Compiling reactor-chisel with example `$example`")
-    val verilog = (new chisel3.stage.ChiselStage).emitVerilog(new StandaloneMainReactor((mainReactorFunc)))
+    val chiselArgs = Array("--target-dir", s"$targetDir/tmp")
+    val verilog = (new chisel3.stage.ChiselStage).emitVerilog(new StandaloneMainReactor((mainReactorFunc)),chiselArgs)
     val saveLocation = targetDir + "/ReactorChisel.v"
     Settings.writeVerilogToFile(verilog, saveLocation)
     println(s"Wrote the generated verilog to `$saveLocation`")
@@ -72,7 +73,8 @@ object ChiselMain {
       case _ => None
     }).get
 
-    val verilogString = (new chisel3.stage.ChiselStage).emitVerilog(platformInst(accInst))
+    val chiselArgs = Array("--target-dir", s"$targetDir/tmp")
+    val verilogString = (new chisel3.stage.ChiselStage).emitVerilog(platformInst(accInst), chiselArgs)
     Settings.writeVerilogToFile(verilogString, targetDir + "/TesterWrapper.v")
     val resRoot = Paths.get("src/main/resources").toAbsolutePath.toString
     val tidbitsResRoot = Paths.get("fpga-tidbits/src/main/resources").toAbsolutePath.toString

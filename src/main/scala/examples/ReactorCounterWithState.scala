@@ -11,6 +11,7 @@ class ReactorCounterWithState extends Reactor {
 
   val io = IO(new Reactor1IO)
   val t = new TimerVirtual(TimerConfig(Time.nsec(0), Time.nsec(20)))
+  localTimers += t
   val r1 = Module(new ReactionCount(ReactionConfig(0,1)))
   val r2 = Module(new ReactionPrintCount(ReactionConfig(1,0)))
   val cnt = Module(new SingleValueState(StateConfig(defData, defToken, 2, Immediate)))
@@ -23,7 +24,6 @@ class ReactorCounterWithState extends Reactor {
   cnt <> r2.stateIO.cnt
 
   reactions = Seq(r1,r2)
-  localTimers = Seq(t)
   val timerIO = connectTimersAndCreateIO()
 
   reactorMain()

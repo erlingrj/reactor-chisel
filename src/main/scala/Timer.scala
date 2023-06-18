@@ -43,7 +43,7 @@ class MainTimer(mainReactor: Reactor) extends Module {
   // FIXME: This should be optimized. I am reusing the old timer module, we can instead create a
   //  single timer with a single hyperperiod
   val allTimerConfigs = mainReactorTimers.map(_.cfg)
-  val timers = for (t <- mainReactorTimers) yield Module(new Timer(t.cfg, allTimerConfigs.diff(Seq(t.cfg))))
+  val timers = for (t <- mainReactorTimers) yield Module(new Timer(t.cfg, allTimerConfigs.toSeq.diff(Seq(t.cfg))))
   // Connect the HW counters to top-level IO
   for ((timer, timerIO) <- timers zip io.timers) {
     timer.io.trigger <> timerIO.trigger

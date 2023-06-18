@@ -4,6 +4,8 @@ import chisel3._
 import fpgatidbits.PlatformWrapper._
 import reactor.Reaction
 
+import scala.collection.mutable.ArrayBuffer
+
 package object globals {
   import Time._
   val defData = UInt(8.W)
@@ -37,7 +39,7 @@ abstract class Reactor extends Module {
   var outPorts: Seq[OutputPort[_ <: Data, _ <: Token[_<: Data]]] = Seq()
   var connections: Seq[Connection[_ <: Data,_ <: Token[_<: Data]]] = Seq()
   var childReactors: Seq[Reactor] = Seq()
-  var localTimers: Seq[TimerVirtual] = Seq()
+  var localTimers: ArrayBuffer[TimerVirtual] = new ArrayBuffer()
   var containedTimers: Seq[TimerVirtual] = Seq()
   var states: Seq[State[_ <: Data, _ <: Token[_ <: Data]]] = Seq()
 

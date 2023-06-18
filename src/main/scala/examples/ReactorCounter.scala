@@ -13,12 +13,12 @@ class ReactorCounter extends Reactor {
 
   val io = IO(new Reactor1IO)
   val t = new TimerVirtual(TimerConfig(Time.nsec(0), Time.nsec(20)))
+  localTimers += t
   val r = Module(new ReactionPurePrint())
 
   t.declareTriggeredReaction(r.t)
 
   reactions = Seq(r)
-  localTimers = Seq(t)
   val timerIO = connectTimersAndCreateIO()
 
   reactorMain()
