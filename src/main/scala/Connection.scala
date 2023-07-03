@@ -7,13 +7,14 @@ import chisel3.experimental.BundleLiterals._
 import scala.collection.mutable.ArrayBuffer
 case class ConnectionConfig[T1 <: Data, T2 <: Token[T1]]
 (
-  gen1: T1,
-  gen2: T2,
+  genData: T1,
+  genToken: T2,
   nChans: Int
 )
+
 class ConnectionIO[T1 <: Data, T2 <: Token[T1]](c: ConnectionConfig[T1,T2]) extends Bundle {
-  val write = new EventWriteSlave(c.gen1, c.gen2)
-  val reads = Vec(c.nChans, new EventReadSlave(c.gen1, c.gen2))
+  val write = new EventWriteSlave(c.genData, c.genToken)
+  val reads = Vec(c.nChans, new EventReadSlave(c.genData, c.genToken))
 
   def driveDefaults(): Unit = {
     write.driveDefaults()
@@ -35,10 +36,12 @@ abstract class Connection[T1 <: Data, T2 <: Token[T1]](c: ConnectionConfig[T1, T
   switch(regState) {
     is (sIdle) {
       io.write.ready := true.B
+      when (io.write.req.valid) {
+        regTag := io.write.req.token.tag
+      }
       when (io.write.fire) {
         regState := sToken
         regTokens.foreach(_ := true.B)
-        regTag := io.write.req.token.tag
       }
     }
 
@@ -78,8 +81,9 @@ class PureConnection(c : ConnectionConfig[UInt,PureToken]) extends Connection(c)
     }
   }
 }
+
 class SingleValueConnection[T <: Data](c: ConnectionConfig[T, SingleToken[T]]) extends Connection(c) {
-  val data = RegInit(0.U.asTypeOf(c.gen1))
+  val data = RegInit(0.U.asTypeOf(c.genData))
   val present = RegInit(false.B)
 
   switch(regState) {
@@ -96,22 +100,23 @@ class SingleValueConnection[T <: Data](c: ConnectionConfig[T, SingleToken[T]]) e
       }
 
       when (done) {
-        data := 0.U.asTypeOf(c.gen1)
+        data := 0.U.asTypeOf(c.genData)
         present := false.B
       }
     }
   }
 }
 
+// The `genFunc` is what complicates this.
 class ConnectionFactory[T1 <: Data, T2 <: Token[T1], T3 <: Connection[T1, T2]](
+                                                                              genData: T1,
+                                                                              genToken: T2,
                                                                 genFunc: ConnectionConfig[T1,T2] => T3,
-                                                                genData: T1,
-                                                                genToken: T2
                                                                 ) extends CircuitFactory {
   var upstream: EventWriter[T1,T2] = null
   var downstreams: ArrayBuffer[Seq[EventReader[T1,T2]]] = ArrayBuffer()
   def addUpstream(up: EventWriter[T1,T2]): Unit = {
-    require(upstream == null)
+    require(upstream == null, "addUpstream called twice")
     upstream = up
   }
   def addDownstream(down: Seq[EventReader[T1,T2]]): Unit = {
@@ -132,9 +137,11 @@ class ConnectionFactory[T1 <: Data, T2 <: Token[T1], T3 <: Connection[T1, T2]](
 
 
   def construct(): Seq[T3] = {
+    require(upstream != null, "Connection.construct() called without anything connecting to the upstream port")
+    require(downstreams.nonEmpty, "Connection.construct() called with nothing connected to the downstream port")
     val config = ConnectionConfig(
-      gen1 = genData,
-      gen2 = genToken,
+      genData = genData,
+      genToken = genToken,
       nChans  = downstreams.map(_.length).sum
     )
     val conn = Module(genFunc(config))
@@ -150,9 +157,15 @@ class ConnectionFactory[T1 <: Data, T2 <: Token[T1], T3 <: Connection[T1, T2]](
   }
 }
 
+class SingleValueConnectionFactory[T1 <: Data](genData: T1) extends ConnectionFactory(
+  genData,
+  new SingleToken(genData),
+  genFunc = (c: ConnectionConfig[T1, SingleToken[T1]]) => new SingleValueConnection(c)
+) {}
+
 // Convenience class to generate the PureConnections more easy
-class PureConnectionFactory extends ConnectionFactory(
-  genFunc = {(c: ConnectionConfig[UInt, PureToken]) => new PureConnection(c)},
-  genData = UInt(0.W),
-  genToken = new PureToken
+class PureConnectionFactory() extends ConnectionFactory(
+  UInt(0.W),
+  new PureToken,
+  genFunc = {(c: ConnectionConfig[UInt, PureToken]) => new PureConnection(c)}
 ) {}

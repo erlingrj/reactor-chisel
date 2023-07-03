@@ -55,6 +55,8 @@ abstract class Reactor extends Module {
     containedTimers = (for (child <- childReactors) yield child.localTimers ++ child.containedTimers).flatten
     val containedTimersIO = (for (child <- childReactors) yield child.timerIO.localTimers ++ child.timerIO.containedTimers).flatten
 
+    println(s"Reactor ${this.name} has ${localTimers.size} local timers ${containedTimers.size} contained timers.")
+
     // Create the timerIO
     val timerIO = IO(new ReactorTimerIO(localTimers.size, containedTimers.size))
 

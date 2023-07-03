@@ -9,11 +9,11 @@ import reactor.ReactionApi._
 class ReactionAddN(n: Int, c: ReactionConfig = ReactionConfig(0,0)) extends Reaction(c) {
   val gen1 = UInt(8.W)
   val gen2 = new SingleToken(gen1)
-  class IO extends ReactionIO {
+  class myIO extends ReactionIO {
     val in = new EventReadMaster(gen1, gen2)
     val out = new EventWriteMaster(gen1, gen2)
   }
-  val io = IO(new IO)
+  val io = IO(new myIO())
 
   class StateIO extends ReactionStateIO {}
   val stateIO = IO(new StateIO)

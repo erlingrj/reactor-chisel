@@ -4,8 +4,9 @@ import chisel3._
 
 object ReactionApi {
 
-  def lf_set[T1 <: Data, T2 <: Token[T1]](port: EventWriteMaster[T1, T2], data: T1): Unit = {
+  def lf_set[T1 <: Data, T2 <: Token[T1]](port: EventWriteMaster[T1, T2], data: T1)(implicit reaction: Reaction): Unit = {
     port.write(data)
+    port.req.token.tag := reaction.logicalTag
   }
   def lf_present[T1 <: Data, T2 <: Token[T1]](port: EventReadMaster[T1,T2]): Bool= {
     port.resp.present
@@ -24,4 +25,8 @@ object ReactionApi {
 
   def lf_time_logical()(implicit reaction: Reaction): UInt = reaction.logicalTag
   def lf_time_physical()(implicit reaction: Reaction): UInt = reaction.physicalTag
+
+  def lf_print(toPrint: Printable): Unit = {
+    printf(toPrint)
+  }
 }

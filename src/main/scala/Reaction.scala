@@ -10,7 +10,9 @@ case class ReactionConfig(
                          nPrecedenceIn: Int = 0,
                          nPrecedenceOut: Int = 0
                          )
-abstract class ReactionIO() extends Bundle {}
+abstract class ReactionIO() extends Bundle {
+
+}
 abstract class ReactionStateIO() extends Bundle {}
 
 // FIXME: Hide behind global debug?
@@ -77,8 +79,8 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
 
     // Create connection module for connecting the ports
     val connection = Module(new PureConnection(ConnectionConfig(
-      gen1 = UInt(0.W),
-      gen2 = new PureToken(),
+      genData = UInt(0.W),
+      genToken = new PureToken(),
       nChans = 1
     )))
 

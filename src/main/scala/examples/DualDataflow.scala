@@ -10,17 +10,15 @@ class DualDataflow extends Reactor {
   val c3 = Module(new DualAddN)
 
   // Connect c1->c2
-  val c1_c2_func = (c: ConnectionConfig[UInt, SingleToken[UInt]]) => new SingleValueConnection(c)
-  val c1_c2 = new ConnectionFactory(c1_c2_func, defData, defToken)
+  val c1_c2 = new SingleValueConnectionFactory(defData)
   c1_c2 << c1.io.out1
   c1_c2 >> c2.io.in
   c1_c2.construct()
 
 
   // Connect c1->c3
-  val c1_c3_func = (c: ConnectionConfig[UInt, SingleToken[UInt]]) => new SingleValueConnection(c)
-  val c1_c3 = new ConnectionFactory(c1_c3_func, defData, defToken)
-  c1_c3 << (c1.io.out2)
+  val c1_c3 = new SingleValueConnectionFactory(defData)
+  c1_c3 << c1.io.out2
   c1_c3 >> (c3.io.in)
   c1_c3.construct()
 

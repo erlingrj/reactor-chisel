@@ -183,8 +183,8 @@ class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (genData: T1, genToken: T2) 
 }
 
 
-class EventWriteSlave[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends EventWriter[T1,T2] {
-  val req = Input(new EventWriteReq(gen1, gen2))
+class EventWriteSlave[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) extends EventWriter[T1,T2] {
+  val req = Input(new EventWriteReq(genData, genToken))
   val ready = Output(Bool())
   val fire = Input(Bool())
   def driveDefaults(): Unit = {

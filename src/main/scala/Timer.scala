@@ -39,6 +39,8 @@ class MainTimer(mainReactor: Reactor) extends Module {
   val io = IO(new MainTimerIO(mainReactorTimers.size))
   io.driveDefaults()
 
+  println(s"MainTimer created for program where main has  ${mainReactor.containedTimers.size} contained + ${mainReactor.containedTimers.size} top-level timers")
+
   // Create the HW counters
   // FIXME: This should be optimized. I am reusing the old timer module, we can instead create a
   //  single timer with a single hyperperiod
@@ -129,7 +131,7 @@ class TimerVirtual(val cfg: TimerConfig) extends CircuitFactory {
   // This functions can be called after triggered reactions and the input-port is declared.
   // It will create a pure connection between the input port and the triggered reactions
   override def construct(): Seq[InputPort[UInt, PureToken]] = {
-    val conn = new PureConnectionFactory
+    val conn = new PureConnectionFactory()
     val in = Module(new InputPort(InputPortConfig(0.U, new PureToken, triggeredReactions.length)))
 
     conn.addUpstream(inputTimerPort)
