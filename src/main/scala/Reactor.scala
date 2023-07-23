@@ -14,7 +14,12 @@ package object globals {
 
 }
 
+case class GlobalReactorConfig(
+                              timeout: Time
+                              )
+
 abstract class ReactorIO extends Bundle {
+  val idle = Output(Bool())
 
   // All the ReactorIO implementations must provide a driveDefaults function which can "plug" any ununsed ports
   def plugUnusedPorts(): Unit
@@ -22,53 +27,61 @@ abstract class ReactorIO extends Bundle {
 // FIXME: We need an optional precedence input port which should be connected to the first reaction of the reactor
 
 
-class ReactorTimerIO(nLocalTimers: Int, nContainedTimers: Int) extends Bundle {
-  val localTimers = Vec(nLocalTimers, new EventWriteSlave(0.U, new PureToken))
-  val containedTimers = Vec(nContainedTimers, new EventWriteSlave(0.U, new PureToken))
+class ReactorTriggerIO(nLocalTriggers: Int, nContainedTriggers: Int) extends Bundle {
+  val localTriggers = Vec(nLocalTriggers, new EventWriteSlave(0.U, new PureToken))
+  val containedTriggers = Vec(nContainedTriggers, new EventWriteSlave(0.U, new PureToken))
 }
 
 abstract class Reactor extends Module {
 
   val io: ReactorIO
-  val timerIO: ReactorTimerIO
+  val triggerIO: ReactorTriggerIO
 
   // FIXME: Verify that there is a precedence relationship among all reactions, i.e. mutex is guaranteed
   // FIXME: These vars should maybe be prependend with _
-  var reactions: Seq[Reaction] = Seq()
-  var inPorts: Seq[InputPort[_ <: Data, _ <: Token[_<: Data]]] = Seq()
-  var outPorts: Seq[OutputPort[_ <: Data, _ <: Token[_<: Data]]] = Seq()
-  var connections: Seq[Connection[_ <: Data,_ <: Token[_<: Data]]] = Seq()
-  var childReactors: Seq[Reactor] = Seq()
-  var localTimers: ArrayBuffer[TimerVirtual] = new ArrayBuffer()
-  var containedTimers: Seq[TimerVirtual] = Seq()
-  var states: Seq[State[_ <: Data, _ <: Token[_ <: Data]]] = Seq()
+  var reactions: ArrayBuffer[Reaction] = new ArrayBuffer()
+  var inPorts: ArrayBuffer[InputPort[_ <: Data, _ <: Token[_<: Data]]] = new ArrayBuffer()
+  var outPorts: ArrayBuffer[OutputPort[_ <: Data, _ <: Token[_<: Data]]] = new ArrayBuffer()
+  var connections: ArrayBuffer[Connection[_ <: Data,_ <: Token[_<: Data]]] = new ArrayBuffer()
+  var childReactors: ArrayBuffer[Reactor] = new ArrayBuffer
+  var localTriggers: ArrayBuffer[TimerTriggerVirtual] = new ArrayBuffer()
+  var containedTriggers: ArrayBuffer[TimerTriggerVirtual] = new ArrayBuffer()
+  var states: ArrayBuffer[State[_ <: Data, _ <: Token[_ <: Data]]] = new ArrayBuffer()
 
+  // Is the current Reactor (or any contained reactor) idle?
+  def isIdle(): Bool = {
+    ( childReactors.map(_.io.idle) ++
+      inPorts.map(!_.io.outward.resp.valid)
+      ).reduce(_ && _)
+  }
 
   def reactorMain(): Unit = {
+    io.idle := isIdle()
     assert(util.PopCount(reactions.map(_.statusIO.state === Reaction.sRunning)) <= 1.U, "[Reactor.scala] Mutual exclusion between reactions not preserved")
   }
 
-  def connectTimersAndCreateIO(): ReactorTimerIO = {
+  def connectTimersAndCreateIO(): ReactorTriggerIO = {
     // Create the seq of contained virtual timers. Also create the Seq of TimerIO which matches the containedTimers.
     // It is important they they match. Because the top-level Reactor will use containedTimers to find the
     // needed timer configs (offset and period).
-    containedTimers = (for (child <- childReactors) yield child.localTimers ++ child.containedTimers).flatten
-    val containedTimersIO = (for (child <- childReactors) yield child.timerIO.localTimers ++ child.timerIO.containedTimers).flatten
+    containedTriggers = (for (child <- childReactors) yield child.localTriggers ++ child.containedTriggers).flatten
+    val containedTimersIO = (for (child <- childReactors) yield child.triggerIO.localTriggers ++ child.triggerIO.containedTriggers).flatten
 
-    println(s"Reactor ${this.name} has ${localTimers.size} local timers ${containedTimers.size} contained timers.")
+    println(s"Reactor ${this.name} has ${localTriggers.size} local timers ${containedTriggers.size} contained timers.")
 
     // Create the timerIO
-    val timerIO = IO(new ReactorTimerIO(localTimers.size, containedTimers.size))
+    val timerIO = IO(new ReactorTriggerIO(localTriggers.size, containedTriggers.size))
 
     // Connect local timers and construct the connections
-    for ((timer, i) <- localTimers.zipWithIndex) {
-      timer.declareInputPort(timerIO.localTimers(i))
-      timer.construct()
+    for ((timer, i) <- localTriggers.zipWithIndex) {
+      timer.declareInputPort(timerIO.localTriggers(i))
+      timer.construct().foreach(inp => inPorts += inp) // Construct the inputPorts for the timer triggers and add them
     }
+
 
     // Forward the timerIO to the contained timers
     for ((containedTimerIO, i) <- containedTimersIO.zipWithIndex) {
-      containedTimerIO <> timerIO.containedTimers(i)
+      containedTimerIO <> timerIO.containedTriggers(i)
     }
 
     // Return the newly created ReactorTimerIO.
@@ -82,21 +95,27 @@ abstract class Reactor extends Module {
   }
 }
 
+class StandaloneMainReactorIO extends Bundle {
+  val terminate = Output(Bool())
+}
 
-class StandaloneMainReactor(mainReactorGenFunc: () => Reactor) extends Module {
+class StandaloneMainReactor(mainReactorGenFunc: () => Reactor)(implicit globalCfg: GlobalReactorConfig) extends Module {
+  val io = IO(new StandaloneMainReactorIO)
   val mainReactor = Module(mainReactorGenFunc())
-  val mainTimer = Module(new MainTimer(mainReactor))
+  val triggerGenerator = Module(new MainTriggerGenerator(mainReactor))
 
-  // Connect the mainTimer to the mainReactor
-  val mainReactorTimerIO = mainReactor.timerIO.localTimers ++ mainReactor.timerIO.containedTimers
-  for ((mainTimer, reactorTimer) <- mainTimer.io.timers zip mainReactorTimerIO) {
-    reactorTimer <> mainTimer.trigger
+  // Connect the triggerGenerator to the mainReactor
+  val mainReactorTriggerIO = mainReactor.triggerIO.localTriggers ++ mainReactor.triggerIO.containedTriggers
+  for ((triggerGen, reactorTrigger) <- triggerGenerator.io.timers zip mainReactorTriggerIO) {
+    reactorTrigger <> triggerGen.trigger
   }
 
-  mainTimer.io.tagAdvanceGrant := Tag.FOREVER
-
+  triggerGenerator.io.tagAdvanceGrant := Tag.FOREVER
+  triggerGenerator.io.mainReactorIdle := mainReactor.io.idle
   // Plug any top-level
   mainReactor.io.plugUnusedPorts()
+
+  io.terminate := triggerGenerator.io.terminate
 }
 
 // FIXME: We want numMemPorts to be configurable

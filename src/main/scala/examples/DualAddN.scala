@@ -30,11 +30,12 @@ class DualAddN extends Reactor {
   r1 > r2
 
 
-  reactions = Seq(r1, r2)
-  inPorts = Seq(in)
-  outPorts = Seq(out)
+  reactions += r1
+  reactions += r2
+  inPorts += (in)
+  outPorts += (out)
 
-  val timerIO = connectTimersAndCreateIO()
+  val triggerIO = connectTimersAndCreateIO()
 
   reactorMain()
 }

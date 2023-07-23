@@ -28,7 +28,7 @@ class DualDataflow extends Reactor {
 
   // Create top-level IO now that we have all port info
   class Reactor2IO extends ReactorIO {
-    val in = Vec(0 + in1PT.width, new EventReadMaster(defData, defToken))
+    val in = Vec(0 + in1PT.nDownstreamInwards, new EventReadMaster(defData, defToken))
     val out1 = new EventWriteMaster(defData, defToken)
     val out2 = new EventWriteMaster(defData, defToken)
 
@@ -47,7 +47,7 @@ class DualDataflow extends Reactor {
   // Construct the pass-through connection
   in1PT.construct()
 
-  val timerIO = connectTimersAndCreateIO()
+  val triggerIO = connectTimersAndCreateIO()
 
   reactorMain()
 }

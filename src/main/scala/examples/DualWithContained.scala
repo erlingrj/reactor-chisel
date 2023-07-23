@@ -28,7 +28,7 @@ class DualWithContained extends Reactor {
 
   // Create top-level IO now that we have all port info
   class Reactor2IO extends ReactorIO {
-    val in = Vec(1 + in1PT.width, new EventReadMaster(defData, defToken))
+    val in = Vec(1 + in1PT.nDownstreamInwards, new EventReadMaster(defData, defToken))
     val out1 = new EventWriteMaster(defData, defToken)
     val out2 = new EventWriteMaster(defData, defToken)
     def plugUnusedPorts(): Unit = in.foreach(_.driveDefaults())
@@ -47,12 +47,13 @@ class DualWithContained extends Reactor {
   // Construct the pass-through connection
   val ptInputPorts = in1PT.construct()
 
-  reactions = Seq(r1, r2)
-  inPorts = Seq(in)
-  outPorts = Seq(out)
-  childReactors = Seq(contained)
+  reactions += r1
+  reactions += (r2)
+  inPorts += (in)
+  outPorts += (out)
+  childReactors += (contained)
 
-  val timerIO = connectTimersAndCreateIO()
+  val triggerIO = connectTimersAndCreateIO()
 
   reactorMain()
 }

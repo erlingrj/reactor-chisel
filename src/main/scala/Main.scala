@@ -52,6 +52,7 @@ object ChiselMain {
 
     println(s"Compiling reactor-chisel with example `$example`")
     val chiselArgs = Array("--target-dir", s"$targetDir/tmp")
+    implicit val globalCfg = GlobalReactorConfig(timeout = Time.NEVER)
     val verilog = (new chisel3.stage.ChiselStage).emitVerilog(new StandaloneMainReactor((mainReactorFunc)),chiselArgs)
     val saveLocation = targetDir + "/ReactorChisel.v"
     Settings.writeVerilogToFile(verilog, saveLocation)

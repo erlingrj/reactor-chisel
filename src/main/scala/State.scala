@@ -170,6 +170,11 @@ class StateWriteSlave[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) ex
 class StateReadWriteMaster[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) extends Bundle {
   val read = new StateReadMaster(genData, genToken)
   val write = new StateWriteMaster(genData, genToken)
+
+  def driveDefaults() = {
+    read.driveDefaults()
+    write.driveDefaults()
+  }
 }
 
 /**

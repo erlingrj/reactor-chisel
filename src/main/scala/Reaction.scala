@@ -13,7 +13,9 @@ case class ReactionConfig(
 abstract class ReactionIO() extends Bundle {
 
 }
-abstract class ReactionStateIO() extends Bundle {}
+abstract class ReactionStateIO() extends Bundle {
+  def driveDefaults(): Unit = {}
+}
 
 // FIXME: Hide behind global debug?
 class ReactionStatusIO extends Bundle {
@@ -61,6 +63,7 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
     antiDependencies.foreach(_.driveDefaults())
     precedenceIn.foreach(_.driveDefaults())
     precedenceOut.foreach(_.driveDefaults())
+    stateIO.driveDefaults()
   }
 
   // Conditions to fire a reaction
@@ -111,11 +114,12 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
   def hasPresentTriggers: Bool = {
     triggers.map(_.resp.present).reduce(_ || _)
   }
-  // FIXME: This function should return a Bool which is true when it is done
-  def reactionBody: Unit
 
+  // This is the user-supplied reaction body
+  def reactionBody(): Unit
+
+  val reactionDone = WireDefault(true.B)
   val reactionEnable = WireDefault(false.B)
-  val reactionDone = WireDefault(false.B)
   val regState = RegInit(sIdle)
   val regCycles = RegInit(0.U(32.W))
 
@@ -149,8 +153,9 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
       is(sRunning) {
         regCycles := regCycles + 1.U
         reactionEnable := true.B
+        reactionDone := true.B
         withReset(!reactionEnable) {
-          reactionBody
+          reactionBody()
         }
         when(reactionDone) {
           regState := sDone

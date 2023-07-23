@@ -199,7 +199,7 @@ class InputPortInwardConnectionFactory[T1 <: Data, T2 <: Token[T1]](genData: T1,
   // once, at construction.
   var upstream: Seq[EventReadMaster[T1, T2]] = Seq()
 
-  def width = downstream.length
+  def nDownstreamInwards = downstream.length
 
   // Declare that a contained input port is downstream. Here the argument is a Seq of EventReadMaster (e.g. input ports)
   // This is because the contained input port might have multiple "channels" because it itself might have contained reactors
@@ -215,8 +215,8 @@ class InputPortInwardConnectionFactory[T1 <: Data, T2 <: Token[T1]](genData: T1,
   // Declare the Input port in the parent reactor. Check the width.
   // Either it is equal the number of downstreams, or it is 1 greater (due to an internal port)
   def declareInput(up: Seq[EventReadMaster[T1, T2]]) = {
-    if (up.length == width) upstream = up
-    else if (up.length == (width - 1)) upstream = up.drop(1)
+    if (up.length == nDownstreamInwards) upstream = up
+    else if (up.length == (nDownstreamInwards + 1)) upstream = up.drop(1)
     else require(false)
   }
   def <<(up: Seq[EventReadMaster[T1, T2]]) = {
@@ -226,8 +226,8 @@ class InputPortInwardConnectionFactory[T1 <: Data, T2 <: Token[T1]](genData: T1,
   // This constructs the actual h
   def construct(): Seq[Module] = {
     val config = InputPortConfig(genData = genData, genToken = genToken, nReaders = 1)
-    val inputPorts = Seq.fill(width)(Module(new InputPort(config)))
-    for (i <- 0 until width) {
+    val inputPorts = Seq.fill(nDownstreamInwards)(Module(new InputPort(config)))
+    for (i <- 0 until nDownstreamInwards) {
       upstream(i) <> inputPorts(i).io.outward
       inputPorts(i).io.inward(0) <> downstream(i)
     }
@@ -235,6 +235,11 @@ class InputPortInwardConnectionFactory[T1 <: Data, T2 <: Token[T1]](genData: T1,
     inputPorts
   }
 }
+
+class SingleValueInputPortInwardConnectionFactory[T1 <: Data](genData: T1) extends InputPortInwardConnectionFactory(
+  genData,
+  new SingleToken(genData),
+) {}
 
 class OutputPortPassthroughBuilder {
 

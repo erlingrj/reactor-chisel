@@ -67,11 +67,9 @@ class EventWriteReq[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bun
   val token = gen2
 
   def driveDefaults(): Unit = {
-    if (directionOf(valid) == ActualDirection.Output) {
-      valid := false.B
-      present := false.B
-      token := 0.U.asTypeOf(gen2)
-    }
+    valid := false.B
+    present := false.B
+    token := 0.U.asTypeOf(gen2)
   }
 
 }
@@ -81,12 +79,11 @@ class EventReadResp[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bun
   val present = Bool()
   val token = gen2
 
+
   def driveDefaults(): Unit = {
-    if (directionOf(valid) == ActualDirection.Output) {
-      valid := false.B
-      present := false.B
-      token := 0.U.asTypeOf(gen2)
-    }
+    valid := false.B
+    present := false.B
+    token := 0.U.asTypeOf(gen2)
   }
 }
 
@@ -96,12 +93,13 @@ class EventReadMaster[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends E
   val resp = Input(new EventReadResp(gen1,gen2))
   val fire = Output(Bool())
 
+  def driveDefaultsFlipped(): Unit = {
+    resp.driveDefaults()
+  }
+
   def driveDefaults(): Unit = {
     req.driveDefaults()
-    resp.driveDefaults()
-    if (directionOf(fire) == ActualDirection.Output) {
-      fire := false.B
-    }
+    fire := false.B
   }
 
   def read(): T1 = {
@@ -131,12 +129,13 @@ class EventReadSlave[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Ev
   val resp = Output(new EventReadResp(gen1, gen2))
   val fire = Input(Bool())
 
-  def driveDefaults(): Unit = {
+  def driveDefaultsFlipped(): Unit = {
+    fire := false.B
     req.driveDefaults()
+  }
+
+  def driveDefaults(): Unit = {
     resp.driveDefaults()
-    if (directionOf(fire) == ActualDirection.Output) {
-      fire := false.B
-    }
   }
 }
 
@@ -146,10 +145,13 @@ class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (genData: T1, genToken: T2) 
   val req = Output(new EventWriteReq(genData,genToken))
   val ready = Input(Bool())
   val fire = Output(Bool())
+
+  def driveDefaultsFlipped(): Unit = {
+    ready := true.B
+  }
+
   def driveDefaults(): Unit = {
-    if (directionOf(fire) == ActualDirection.Output) {
-      fire := false.B
-    }
+    fire := false.B
     req.driveDefaults()
   }
 
@@ -182,17 +184,38 @@ class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (genData: T1, genToken: T2) 
   }
 }
 
-
 class EventWriteSlave[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) extends EventWriter[T1,T2] {
   val req = Input(new EventWriteReq(genData, genToken))
   val ready = Output(Bool())
   val fire = Input(Bool())
-  def driveDefaults(): Unit = {
-    if (directionOf(fire) == ActualDirection.Output) {
-      fire := false.B
-    } else {
-      ready := false.B
-    }
+
+  def driveDefaultsFlipped(): Unit = {
+    fire := false.B
     req.driveDefaults()
   }
+
+  def driveDefaults(): Unit = {
+    ready := false.B
+  }
+}
+
+/**
+ * A simple queue for buffering events coming out of the TriggerGenerator
+ */
+class EventWriteQueueIO[T1<: Data, T2 <: Token[T1]](genData: T1, genToken: T2) extends Bundle {
+  val enq = new EventWriteSlave(genData,genToken)
+  val deq = new EventWriteMaster(genData, genToken)
+}
+
+class EventWriteQueue[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2, nEntries: Int = 2) extends Module {
+  val io = IO(new EventWriteQueueIO(genData, genToken))
+  val q = Module(new Queue(new EventWriteReq(genData, genToken), nEntries))
+
+  q.io.enq.bits := io.enq.req
+  q.io.enq.valid := io.enq.fire
+  io.enq.ready := q.io.enq.ready
+
+  io.deq.req := q.io.deq.bits
+  io.deq.fire := q.io.deq.valid
+  q.io.deq.ready := io.deq.ready
 }

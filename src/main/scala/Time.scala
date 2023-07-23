@@ -35,6 +35,8 @@ class Time(val nanoseconds: Long) {
 
 
 object Time {
+  val FOREVER = new Time(Long.MaxValue)
+  val NEVER = new Time(Long.MinValue)
   def nsec: Long => Time = (n: Long) => new Time(n)
   def usec: Long => Time = (n: Long) => new Time(n * 1000)
   def msec: Long => Time = (n: Long) => new Time(n * 1000000)

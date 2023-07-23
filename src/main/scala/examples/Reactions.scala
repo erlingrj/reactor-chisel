@@ -25,11 +25,11 @@ class ReactionAddN(n: Int, c: ReactionConfig = ReactionConfig(0,0)) extends Reac
   val in = io.in
   val out = io.out
 
-  def reactionBody ={
+  def reactionBody() ={
     val read = lf_get(in)
     val filtered = read + n.U
     lf_set(out, filtered)
-    reactionDone := true.B
+    true.B
   }
 
   reactionMain()
@@ -57,8 +57,9 @@ class ReactionDownsample(rate: Int, c: ReactionConfig = ReactionConfig(0,0)) ext
   val in = io.in
   val out = io.out
 
-  def reactionBody = {
+  def reactionBody() = {
     assert(false.B)
+    true.B
   }
 
   reactionMain()
@@ -88,7 +89,7 @@ class ReactionSum(latency: Int = 0, c: ReactionConfig = ReactionConfig(0,0)) ext
   val in2 = io.in2
   val out = io.out
 
-  def reactionBody = {
+  def reactionBody() = {
     val sum = WireDefault(0.U(8.W))
     val regCount = 0.U(8.W)
     regCount := regCount + 1.U
@@ -102,8 +103,9 @@ class ReactionSum(latency: Int = 0, c: ReactionConfig = ReactionConfig(0,0)) ext
 
     when (regCount === latency.U) {
       lf_set(out, sum)
-      reactionDone := true.B
+      true.B
     }
+    false.B
   }
   reactionMain()
 }
@@ -134,10 +136,10 @@ class ReactionAddMultipleWidths(c: ReactionConfig = ReactionConfig(0,0)) extends
   val in2 = io.in2
   val out = io.out
 
-  def reactionBody ={
+  def reactionBody() ={
     val sum = lf_get(in1) + lf_get(in2)
     lf_set(out, sum)
-    reactionDone := true.B
+    true.B
   }
 
   reactionMain()
@@ -156,9 +158,9 @@ class ReactionPurePrint(c: ReactionConfig = ReactionConfig(0,0)) extends Reactio
   // Bring the port into scope
   val t = io.t
 
-  def reactionBody ={
+  def reactionBody() ={
     printf("Reaction triggered @ logical tag: %d physical tag: %d\n", lf_time_logical(), lf_time_physical())
-    reactionDone := true.B
+    true.B
   }
 
   reactionMain()
@@ -189,10 +191,10 @@ class ReactionCountPrint(c: ReactionConfig = ReactionConfig(0,0)) extends Reacti
   // Bring state variables into scope
   val cnt = stateIO.cnt
 
-  def reactionBody = {
+  def reactionBody() = {
     printf("Count=%d Reaction triggered @ logical tag: %d physical tag: %d\n", lf_read(cnt), lf_time_logical(), lf_time_physical())
     lf_write(cnt, lf_read(cnt) + 1.U)
-    reactionDone := true.B
+    true.B
   }
 
   reactionMain()
@@ -223,9 +225,9 @@ class ReactionCount(c: ReactionConfig = ReactionConfig(0,0)) extends Reaction(c)
   // Bring state variables into scop
   val cnt = stateIO.cnt
 
-  def reactionBody = {
+  def reactionBody() = {
     lf_write(cnt, lf_read(cnt) + 1.U)
-    reactionDone := true.B
+    true.B
   }
   reactionMain()
 }
@@ -254,9 +256,9 @@ class ReactionPrintCount(c: ReactionConfig = ReactionConfig(0,0)) extends Reacti
   // Bring state variables into scop
   val cnt = stateIO.cnt
 
-  def reactionBody = {
+  def reactionBody() = {
     printf("Count=%d\n", lf_read(cnt))
-    reactionDone := true.B
+    true.B
   }
   reactionMain()
 }
