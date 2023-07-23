@@ -6,8 +6,6 @@
 
 #define MAX_SIM_TIME 20
 vluint64_t sim_time = 0;
-bool timeout = false;
-vluint64_t timeout_time = 0;
 
 double sc_time_stamp() { return sim_time; }
 
@@ -17,10 +15,6 @@ int main(int argc, char** argv, char** env) {
         if (!strcmp(argv[i], "--trace")) {
             std::cout << "Tracing enabled" << std::endl;
             trace_enabled = true;
-        }
-        if (!strcmp(argv[i], "--timeout")) {
-            timeout=true;
-            timeout_time= atoi(argv[i+1]);
         }
     }
     VReactorChisel *dut = new VReactorChisel;
@@ -34,9 +28,17 @@ int main(int argc, char** argv, char** env) {
     }
     
     // Simulate circuit until timeout, if specified
-    while (!timeout || sim_time < timeout_time) {
+    int terminate = 0;
+
+    while (terminate == 0) {
+        if (sim_time <= 2) {
+            dut->reset = 1;
+        } else {
+            dut->reset = 0;
+        }
         dut->clock ^= 1;
         dut->eval();
+        terminate = dut->io_terminate && sim_time > 2;
         if (trace_enabled) m_trace->dump(sim_time);
         sim_time++;
     }
