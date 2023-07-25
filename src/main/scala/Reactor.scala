@@ -14,7 +14,6 @@ package object globals {
   val pureData = UInt(8.W)
 
 }
-
 case class GlobalReactorConfig(
                               timeout: Time
                               )
@@ -70,6 +69,13 @@ abstract class Reactor extends Module {
     io.idle := isIdle()
     assert(util.PopCount(reactions.map(_.statusIO.state === Reaction.sRunning)) <= 1.U, "[Reactor.scala] Mutual exclusion between reactions not preserved")
     connectExternalIOInternally()
+    fixNaming()
+  }
+
+  def fixNaming(): Unit = {
+    childReactors.foreach(r => {
+      r.suggestName(r.name)
+    })
   }
 
   def connectTimersAndCreateIO(): ReactorTriggerIO = {

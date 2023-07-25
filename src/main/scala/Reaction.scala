@@ -11,7 +11,19 @@ case class ReactionConfig(
                          nPrecedenceOut: Int = 0
                          )
 abstract class ReactionIO() extends Bundle {
-
+  /**
+   * Drive all the IOs of the Reaction to default inactive values.
+   */
+  def driveDefaults(): Unit = {
+    for (elt <- this.getElements) {
+      elt match {
+        case value: EventReadMaster[_,_] => value.driveDefaults()
+        case value: EventWriteMaster[_,_] => value.driveDefaults()
+        case value: StateReadWriteMaster[_,_] => value.driveDefaults()
+        case _ =>
+      }
+    }
+  }
 }
 abstract class ReactionStateIO() extends Bundle {
 
@@ -70,9 +82,7 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
   val physicalTag = RegInit(0.U(64.W))
   physicalTag := physicalTag + 1.U
   def driveDefaults(): Unit = {
-    triggers.foreach(_.driveDefaults())
-    dependencies.foreach(_.driveDefaults())
-    antiDependencies.foreach(_.driveDefaults())
+    io.driveDefaults()
     precedenceIn.foreach(_.driveDefaults())
     precedenceOut.foreach(_.driveDefaults())
     stateIO.driveDefaults()

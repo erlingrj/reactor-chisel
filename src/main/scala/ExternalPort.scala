@@ -7,7 +7,7 @@ import chisel3._
  */
 
 class ExternalOutputPortLatchIO[T1 <: Data](genData: T1, nWriters: Int) extends Bundle {
-  val write = Vec(nWriters, new StateWriteSlave(genData, new SingleToken(genData)))
+  val write = Vec(nWriters, new StateReadWriteSlave(genData, new SingleToken(genData)))
   val read = Output(genData)
 }
 
@@ -31,10 +31,17 @@ class ExternalOutputPortLatch[T1 <: Data](genData: T1, nWriters: Int) extends Mo
   )))
 
   for (i <- 0 until nWriters) {
-    io.write(i) <> latch.io.ports(i)
+    latch.io.ports(i) <> io.write(i)
   }
 
   latch.io.ports.last.write.driveDefaultsFlipped()
   latch.io.ports.last.read.driveDefaultsFlipped()
   io.read := latch.io.ports.last.read.resp.data
+
+  var nAttchedWriters = 0
+  def <>(reaction: StateReadWriteMaster[T1, SingleToken[T1]]) = {
+    require(nWriters > nAttchedWriters, s"[ExternalPort.scala] Tried connecting more reactions to OutputLatch, but only ${nWriters} reactions specified in the config")
+    io.write(nAttchedWriters) <> reaction
+    nAttchedWriters += 1
+  }
 }

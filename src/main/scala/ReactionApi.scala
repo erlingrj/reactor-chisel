@@ -24,8 +24,8 @@ object ReactionApi {
    * @param reaction
    * @tparam T
    */
-  def lf_set[T <: Data](port: StateWriteMaster[T, SingleToken[T]], data: T)(implicit reaction: Reaction): Unit = {
-    port.write(data)
+  def lf_set[T <: Data](port: StateReadWriteMaster[T, SingleToken[T]], data: T)(implicit reaction: Reaction): Unit = {
+    port.write.write(data)
   }
   def lf_present[T1 <: Data, T2 <: Token[T1]](port: EventReadMaster[T1,T2]): Bool= {
     port.resp.present
@@ -50,6 +50,10 @@ object ReactionApi {
    */
   def lf_get[T1 <: Data](port: T1): T1 = {
     port
+  }
+
+  def lf_get[T <: Data](port: StateReadWriteMaster[T, SingleToken[T]])(implicit reaction: Reaction): T = {
+    port.read.read()
   }
 
   /**
