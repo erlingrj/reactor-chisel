@@ -14,7 +14,19 @@ abstract class ReactionIO() extends Bundle {
 
 }
 abstract class ReactionStateIO() extends Bundle {
-  def driveDefaults(): Unit = {}
+
+  // This function iterates through all the elements of the bundle, casts them the StateReadWriteMaster
+  // and drives the default values.
+  def driveDefaults(): Unit = {
+    for(elt <- this.getElements) {
+      elt.asInstanceOf[StateReadWriteMaster[_ <: Data, _ <: Token[_ <: Data]]].driveDefaults()
+    }
+  }
+}
+
+
+abstract class ExternalIO() extends Bundle {
+
 }
 
 // FIXME: Hide behind global debug?

@@ -36,6 +36,9 @@ class DualDataflow extends Reactor {
     def driveDefaults() = {}
   }
 
+  class ExternalIO extends ReactorExternalIO(childReactors) { }
+  val externalIO = IO(new ExternalIO())
+
   val io = IO(new Reactor2IO)
 
   // Connect pass through ports

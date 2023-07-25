@@ -22,5 +22,9 @@ class ReactorCounter extends Reactor {
   reactions += (r)
   val triggerIO = connectTimersAndCreateIO()
 
+  class ExternalIO extends ReactorExternalIO(childReactors) {}
+
+  val externalIO = IO(new ExternalIO())
+
   reactorMain()
 }

@@ -47,9 +47,7 @@ class StateReadResp[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) exte
   val data = genData
 
   def driveDefaults(): Unit = {
-    if (directionOf(data) == ActualDirection.Output) {
-      data := 0.U.asTypeOf(genData)
-    }
+    data := 0.U.asTypeOf(genData)
   }
 }
 
@@ -74,10 +72,8 @@ class StateWriteReq[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) exte
   }
 
   def driveDefaults() = {
-    if (directionOf(write) == ActualDirection.Output) {
-      write := false.B
-      data := 0.U.asTypeOf(genData)
-    }
+    write := false.B
+    data := 0.U.asTypeOf(genData)
   }
 }
 
@@ -95,8 +91,12 @@ class StateReadMaster[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) ex
 
   def driveDefaults() = {
     req.driveDefaults()
+  }
+
+  def driveDefaultsFlipped() = {
     resp.driveDefaults()
   }
+
   def read(): T1 = {
     resp.data
   }
@@ -115,6 +115,8 @@ class StateWriteMaster[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) e
   def driveDefaults() = {
     req.driveDefaults()
   }
+
+  def driveDefaultsFlipped() = {}
 
   def write(d: T1): Unit = {
     req.write:= true.B
@@ -139,8 +141,10 @@ class StateReadSlave[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) ext
   val resp = Output(new StateReadResp(genData, genToken))
 
   def driveDefaults() = {
-    req.driveDefaults()
     resp.driveDefaults()
+  }
+  def driveDefaultsFlipped() = {
+    req.driveDefaults()
   }
 }
 
@@ -154,9 +158,10 @@ class StateReadSlave[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) ext
 class StateWriteSlave[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) extends Bundle {
   val req = Input(new StateWriteReq(genData, genToken))
 
-  def driveDefaults() = {
+  def driveDefaultsFlipped() = {
     req.driveDefaults()
   }
+  def driveDefaults() = {}
 }
 
 /**
@@ -175,6 +180,10 @@ class StateReadWriteMaster[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T
     read.driveDefaults()
     write.driveDefaults()
   }
+  def driveDefaultsFlipped() = {
+    read.driveDefaultsFlipped()
+    write.driveDefaultsFlipped()
+  }
 }
 
 /**
@@ -188,6 +197,16 @@ class StateReadWriteMaster[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T
 class StateReadWriteSlave[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) extends Bundle {
   val read = new StateReadSlave(genData, genToken)
   val write = new StateWriteSlave(genData, genToken)
+
+  def driveDefaults() = {
+    read.driveDefaults()
+    write.driveDefaults()
+  }
+
+  def driveDefaultsFlipped() = {
+    read.driveDefaultsFlipped()
+    write.driveDefaultsFlipped()
+  }
 }
 
 sealed trait StateProtocolOption

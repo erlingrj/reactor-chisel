@@ -13,6 +13,9 @@ class DualAddN extends Reactor {
     def driveDefaults() = {}
   }
 
+  class ExternalIO extends ReactorExternalIO(childReactors) {}
+
+  val externalIO = IO(new ExternalIO())
   val io = IO(new Reactor1IO)
   val r1 = Module(new ReactionAddN(1, ReactionConfig(nPrecedenceOut = 1)))
   val r2 = Module(new ReactionAddN(2, ReactionConfig(nPrecedenceIn = 1)))

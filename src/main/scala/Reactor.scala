@@ -1,6 +1,7 @@
 package reactor
 
 import chisel3._
+import chisel3.util.MixedVec
 import fpgatidbits.PlatformWrapper._
 import reactor.Reaction
 
@@ -28,6 +29,11 @@ abstract class ReactorIO extends Bundle {
 }
 // FIXME: We need an optional precedence input port which should be connected to the first reaction of the reactor
 
+// Abstract base class for the external IO. These are IO signals e.g. connected to the pins of the FPGA
+// Reactions can also read and write to such pins.
+abstract class ReactorExternalIO(children: ArrayBuffer[Reactor]) extends Bundle {
+  val childrenIO = MixedVec(Seq.tabulate(children.length)(i => children(i).externalIO.cloneType))
+}
 
 class ReactorTriggerIO(nLocalTriggers: Int, nContainedTriggers: Int) extends Bundle {
   val localTriggers = Vec(nLocalTriggers, new EventWriteSlave(0.U, new PureToken))
@@ -36,10 +42,13 @@ class ReactorTriggerIO(nLocalTriggers: Int, nContainedTriggers: Int) extends Bun
 
 abstract class Reactor extends Module {
 
+  // The Inputs and Outputs of the reactor
   val io: ReactorIO
+  // The trigger (Timers) inputs to the reactor. All Timer triggers are generated in the same external module
   val triggerIO: ReactorTriggerIO
+  // The external (input/output with @physical attribute) ports which can be read and written from reactions.
+  val externalIO: ReactorExternalIO
 
-  // FIXME: Verify that there is a precedence relationship among all reactions, i.e. mutex is guaranteed
   // FIXME: These vars should maybe be prependend with _
   var reactions: ArrayBuffer[Reaction] = new ArrayBuffer()
   var inPorts: ArrayBuffer[InputPort[_ <: Data, _ <: Token[_<: Data]]] = new ArrayBuffer()
@@ -60,6 +69,7 @@ abstract class Reactor extends Module {
   def reactorMain(): Unit = {
     io.idle := isIdle()
     assert(util.PopCount(reactions.map(_.statusIO.state === Reaction.sRunning)) <= 1.U, "[Reactor.scala] Mutual exclusion between reactions not preserved")
+    connectExternalIOInternally()
   }
 
   def connectTimersAndCreateIO(): ReactorTriggerIO = {
@@ -95,6 +105,13 @@ abstract class Reactor extends Module {
   def connectState(): Unit = {
 
   }
+
+  // This convenience function connects the externalIO bundle internally to the child reactors
+  def connectExternalIOInternally(): Unit = {
+    for ((extIO, child) <- externalIO.childrenIO zip childReactors) {
+      extIO <> child.externalIO
+    }
+  }
 }
 
 class StandaloneMainReactorIO extends Bundle {
@@ -102,8 +119,11 @@ class StandaloneMainReactorIO extends Bundle {
 }
 
 class StandaloneMainReactor(mainReactorGenFunc: () => Reactor)(implicit globalCfg: GlobalReactorConfig) extends Module {
-  val io = IO(new StandaloneMainReactorIO)
   val mainReactor = Module(mainReactorGenFunc())
+  val io = IO(new StandaloneMainReactorIO)
+  val externalIO = IO(mainReactor.externalIO.cloneType)
+  externalIO <> mainReactor.externalIO
+
   val triggerGenerator = Module(new MainTriggerGenerator(mainReactor))
 
   // Connect the triggerGenerator to the mainReactor

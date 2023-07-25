@@ -36,6 +36,10 @@ class DualWithContained extends Reactor {
   }
   val io = IO(new Reactor2IO)
 
+  class ExternalIO extends ReactorExternalIO(childReactors) {}
+
+  val externalIO = IO(new ExternalIO())
+
   // Connect pass through ports
   in1PT.declareInput(io.in.drop(1))
 
