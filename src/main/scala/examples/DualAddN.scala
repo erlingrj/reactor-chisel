@@ -9,7 +9,8 @@ class DualAddN extends Reactor {
     val in = Vec(1, new EventReadMaster(defData, defToken))
     val out = new EventWriteMaster(defData, defToken)
 
-    def plugUnusedPorts(): Unit = in.foreach(_.driveDefaults())
+    def driveDefaultsFlipped(): Unit = in.foreach(_.driveDefaults())
+    def driveDefaults() = {}
   }
 
   val io = IO(new Reactor1IO)

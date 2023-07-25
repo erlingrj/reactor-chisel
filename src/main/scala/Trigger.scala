@@ -45,7 +45,7 @@ class MainTriggerGenerator(mainReactor: Reactor)(implicit val globalCfg: GlobalR
   }
 
   // Termination condition. 10 CCs with everything idle
-  val terminate = timers.map(_.coordinationIo.idle).reduce(_ && _) && io.mainReactorIdle
+  val terminate = timers.map(_.coordinationIo.idle).reduceOption(_ && _).getOrElse(true.B) && io.mainReactorIdle
   val regTerminateCountDown = RegInit(10.U)
 
   when (terminate) {

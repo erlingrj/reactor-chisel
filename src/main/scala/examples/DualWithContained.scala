@@ -31,7 +31,8 @@ class DualWithContained extends Reactor {
     val in = Vec(1 + in1PT.nDownstreamInwards, new EventReadMaster(defData, defToken))
     val out1 = new EventWriteMaster(defData, defToken)
     val out2 = new EventWriteMaster(defData, defToken)
-    def plugUnusedPorts(): Unit = in.foreach(_.driveDefaults())
+    def driveDefaultsFlipped(): Unit = in.foreach(_.driveDefaults())
+    def driveDefaults() = {}
   }
   val io = IO(new Reactor2IO)
 

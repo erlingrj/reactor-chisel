@@ -22,7 +22,9 @@ abstract class ReactorIO extends Bundle {
   val idle = Output(Bool())
 
   // All the ReactorIO implementations must provide a driveDefaults function which can "plug" any ununsed ports
-  def plugUnusedPorts(): Unit
+  // Both from the inside and the outside (flipped)
+  def driveDefaultsFlipped(): Unit
+  def driveDefaults(): Unit
 }
 // FIXME: We need an optional precedence input port which should be connected to the first reaction of the reactor
 
@@ -48,11 +50,11 @@ abstract class Reactor extends Module {
   var containedTriggers: ArrayBuffer[TimerTriggerVirtual] = new ArrayBuffer()
   var states: ArrayBuffer[State[_ <: Data, _ <: Token[_ <: Data]]] = new ArrayBuffer()
 
-  // Is the current Reactor (or any contained reactor) idle?
+  // Is the current Reactor (and any contained reactor idle?)
   def isIdle(): Bool = {
     ( childReactors.map(_.io.idle) ++
       inPorts.map(!_.io.outward.resp.valid)
-      ).reduce(_ && _)
+      ).reduceOption(_ && _).getOrElse(true.B)
   }
 
   def reactorMain(): Unit = {
@@ -113,7 +115,7 @@ class StandaloneMainReactor(mainReactorGenFunc: () => Reactor)(implicit globalCf
   triggerGenerator.io.tagAdvanceGrant := Tag.FOREVER
   triggerGenerator.io.mainReactorIdle := mainReactor.io.idle
   // Plug any top-level
-  mainReactor.io.plugUnusedPorts()
+  mainReactor.io.driveDefaultsFlipped()
 
   io.terminate := triggerGenerator.io.terminate
 }

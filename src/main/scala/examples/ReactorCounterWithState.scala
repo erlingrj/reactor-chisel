@@ -6,7 +6,8 @@ import reactor.globals._
 
 class ReactorCounterWithState extends Reactor {
   class Reactor1IO extends ReactorIO {
-    def plugUnusedPorts() = {}
+    def driveDefaultsFlipped() = {}
+    def driveDefaults() = {}
   }
 
   val io = IO(new Reactor1IO)

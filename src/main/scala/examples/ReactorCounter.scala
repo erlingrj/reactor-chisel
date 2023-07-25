@@ -8,7 +8,8 @@ import chisel3.util._
 
 class ReactorCounter extends Reactor {
   class Reactor1IO extends ReactorIO {
-    def plugUnusedPorts() = {}
+    def driveDefaultsFlipped() = {}
+    def driveDefaults() = {}
   }
 
   val io = IO(new Reactor1IO)

@@ -25,11 +25,18 @@ class ConnectionIO[T1 <: Data, T2 <: Token[T1]](c: ConnectionConfig[T1,T2]) exte
 abstract class Connection[T1 <: Data, T2 <: Token[T1]](c: ConnectionConfig[T1, T2]) extends Module {
   val io = IO(new ConnectionIO(c))
   io.driveDefaults()
+  // If there are no channels (i.e. no reactions triggered by this connection), then we still need
+  // a channel for the writer to write into. An optimization would be to not do any writing in this case.
+  var numReadChannels = c.nChans
+  if (numReadChannels == 0) {
+    println("WARNING: Got a connection with no triggered reactions downstream")
+    numReadChannels = 1
+  }
 
   val sIdle :: sToken :: Nil = Enum(2)
-
   val regState = RegInit(sIdle)
-  val regTokens = RegInit(VecInit(Seq.fill(c.nChans)(false.B)))
+
+  val regTokens = RegInit(VecInit(Seq.fill(numReadChannels)(false.B)))
   val regTag = RegInit(0.U(64.W))
   val done = WireDefault(false.B)
 
@@ -41,7 +48,11 @@ abstract class Connection[T1 <: Data, T2 <: Token[T1]](c: ConnectionConfig[T1, T
       }
       when (io.write.fire) {
         regState := sToken
-        regTokens.foreach(_ := true.B)
+        // Note that we use c.nChans here and not numReadChannels. In case c.nChans == 0
+        for (i <- 0 until c.nChans) {
+          regTokens(i) := true.B
+        }
+
       }
     }
 
