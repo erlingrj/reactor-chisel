@@ -92,7 +92,8 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
   def fireReaction: Bool = {
       triggers.map(_.resp.valid).reduce(_ && _) &&
         dependencies.map(_.resp.valid).foldLeft(true.B)(_ && _)  &&
-        precedenceIn.map(_.resp.valid).foldLeft(true.B)(_ && _)
+        precedenceIn.map(_.resp.valid).foldLeft(true.B)(_ && _) &&
+        antiDependencies.map(_.ready).foldLeft(true.B)(_ && _)
   }
 
   // FIXME: Do operator overloading so we can do "r1 > r2 > r3 > r4`

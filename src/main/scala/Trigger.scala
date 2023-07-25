@@ -115,7 +115,7 @@ class Timer(c: TimerConfig, others: Seq[TimerConfig] = Seq())(globalReactorConfi
   val hasShutdownTrigger = allTimers.filter(_.builtin).filter(_.offset == Time.FOREVER).nonEmpty
 
   if (otherTimers.nonEmpty) {
-    val otherTimerWidths = for (t <- others) yield log2Ceil(1 + Math.max(t.period.ticks, t.offset.ticks))
+    val otherTimerWidths = for (t <- otherTimers) yield log2Ceil(1 + Math.max(t.period.ticks, t.offset.ticks))
 
     // Handle other timers
     for (i <- otherTimers.indices) {
