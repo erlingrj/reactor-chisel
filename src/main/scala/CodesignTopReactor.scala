@@ -2,7 +2,7 @@ package reactor
 
 import chisel3._
 import fpgatidbits.PlatformWrapper._
-abstract class CodesignTopReactorIO(p: PlatformWrapperParams) extends GenericAcceleratorIF(AcceleratorParams(numMemPorts=0),p) {
+abstract class CodesignTopReactorIO(p: PlatformWrapperParams) extends GenericAcceleratorIF(p.numMemPorts,p) {
   val start = Input(Bool())
   val done = Output(Bool())
   val running = Output(Bool())
@@ -16,6 +16,7 @@ abstract class CodesignTopReactorIO(p: PlatformWrapperParams) extends GenericAcc
 
 abstract class CodesignTopReactor(p: PlatformWrapperParams) extends GenericAccelerator(p) {
 
+  val numMemPorts = p.numMemPorts
   val io: CodesignTopReactorIO
   val scheduler: Scheduler
 

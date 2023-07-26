@@ -12,7 +12,6 @@ class TopReactorExIO extends CodesignTopReactorIO(TesterWrapperParams) {
   val out2 = Output(new SwSingleToken(defData))
 }
 class TopReactorEx extends CodesignTopReactor(TesterWrapperParams) {
-  val accelParams = AcceleratorParams(0)
   val gen = new SingleToken(UInt(8.W))
 
   // Top-level, software-facing IO
