@@ -6,12 +6,12 @@ import reactor.globals._
 
 import fpgatidbits.PlatformWrapper._
 
-class TopReactorExIO extends CodesignMainReactorIO(TesterWrapperParams) {
+class TopReactorExIO extends CodesignTopReactorIO(TesterWrapperParams) {
   val in = Input(new SwSingleToken(defData))
   val out1 = Output(new SwSingleToken(defData))
   val out2 = Output(new SwSingleToken(defData))
 }
-class TopReactorEx extends CodesignMainReactor(TesterWrapperParams) {
+class TopReactorEx extends CodesignTopReactor(TesterWrapperParams) {
   val accelParams = AcceleratorParams(0)
   val gen = new SingleToken(UInt(8.W))
 

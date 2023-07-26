@@ -25,6 +25,7 @@ abstract class ReactorIO extends Bundle {
   // Both from the inside and the outside (flipped)
   def driveDefaultsFlipped(): Unit
   def driveDefaults(): Unit
+
 }
 // FIXME: We need an optional precedence input port which should be connected to the first reaction of the reactor
 
@@ -120,48 +121,3 @@ abstract class Reactor extends Module {
   }
 }
 
-class StandaloneMainReactorIO extends Bundle {
-  val terminate = Output(Bool())
-}
-
-class StandaloneMainReactor(mainReactorGenFunc: () => Reactor)(implicit globalCfg: GlobalReactorConfig) extends Module {
-  val mainReactor = Module(mainReactorGenFunc())
-  val io = IO(new StandaloneMainReactorIO)
-  val externalIO = IO(mainReactor.externalIO.cloneType)
-  externalIO <> mainReactor.externalIO
-
-  val triggerGenerator = Module(new MainTriggerGenerator(mainReactor))
-
-  // Connect the triggerGenerator to the mainReactor
-  val mainReactorTriggerIO = mainReactor.triggerIO.localTriggers ++ mainReactor.triggerIO.containedTriggers
-  for ((triggerGen, reactorTrigger) <- triggerGenerator.io.timers zip mainReactorTriggerIO) {
-    reactorTrigger <> triggerGen.trigger
-  }
-
-  triggerGenerator.io.tagAdvanceGrant := Tag.FOREVER
-  triggerGenerator.io.mainReactorIdle := mainReactor.io.idle
-  // Plug any top-level
-  mainReactor.io.driveDefaultsFlipped()
-
-  io.terminate := triggerGenerator.io.terminate
-}
-
-// FIXME: We want numMemPorts to be configurable
-abstract class CodesignMainReactorIO(p: PlatformWrapperParams) extends GenericAcceleratorIF(AcceleratorParams(numMemPorts=0),p) {
-  val start = Input(Bool())
-  val done = Output(Bool())
-  val running = Output(Bool())
-
-  def connectScheduler(s: Scheduler): Unit = {
-    s.io.start := start
-    running := s.io.running
-    done := s.io.done
-  }
-}
-
-abstract class CodesignMainReactor(p: PlatformWrapperParams) extends GenericAccelerator(p) {
-
-  val io: CodesignMainReactorIO
-  val scheduler: Scheduler
-
-}
