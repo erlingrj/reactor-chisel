@@ -12,9 +12,16 @@ class Tag extends Bundle {
 object Tag {
   def FOREVER: Tag = {
     val tag = Wire(new Tag())
-    tag.time := ~0.U
+    tag.time := Time.FOREVER.ticks.U(64.W)
     tag
   }
+
+  def NEVER: Tag = {
+    val tag = Wire(new Tag())
+    tag.time := Time.NEVER.ticks.U(64.W)
+    tag
+  }
+
   def apply(initialValue: Long): Tag = {
     val tag = Wire(new Tag())
     tag.time := initialValue.U
@@ -26,4 +33,12 @@ object Tag {
     tag.time := initialValue
     tag
   }
+
+  def apply(initialValue: Time): Tag = {
+    val tag = Wire(new Tag())
+    tag.time := initialValue.ticks
+    tag
+  }
+
+  def width: Int = 64
 }

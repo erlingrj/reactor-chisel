@@ -27,16 +27,16 @@ class FifoToken[T <: Data](gen:T, depth: Int) extends Token(gen) {
 }
 
 // Create a separate class hierarchy for SwTokens, i.e. tokens coming from Software reactors
-abstract class SwToken[T <: Data](gen: T) extends Token(gen) {}
+abstract class SwToken[T <: Data](gen: T) extends Token(gen) {
+  val present = Bool()
+}
 class SwSingleToken[T <: Data](gen: T) extends SwToken(gen) {
   val data = gen
-  val present= Bool()
 }
 
 class SwArrayToken[T <: Data](gen: T) extends SwToken(gen) {
   val addr = UInt(32.W) // FIXME: This assumes 32bit shared memory space
   val size = UInt(32.W)
-  val present = Bool()
 }
 
 

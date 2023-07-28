@@ -38,6 +38,8 @@ abstract class ReactorExternalIO(children: ArrayBuffer[Reactor]) extends Bundle 
 class ReactorTriggerIO(nLocalTriggers: Int, nContainedTriggers: Int) extends Bundle {
   val localTriggers = Vec(nLocalTriggers, new EventWriteSlave(0.U, new PureToken))
   val containedTriggers = Vec(nContainedTriggers, new EventWriteSlave(0.U, new PureToken))
+
+  def allTriggers = localTriggers ++ containedTriggers
 }
 
 abstract class Reactor extends Module {
@@ -78,6 +80,8 @@ abstract class Reactor extends Module {
       r.suggestName(r.name)
     })
   }
+
+  def allTriggerConfigs(): ArrayBuffer[TimerTriggerVirtual] = localTriggers ++ containedTriggers
 
   def connectTimersAndCreateIO(): ReactorTriggerIO = {
     // Create the seq of contained virtual timers. Also create the Seq of TimerIO which matches the containedTimers.
