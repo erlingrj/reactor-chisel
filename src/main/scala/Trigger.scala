@@ -83,7 +83,7 @@ class Timer(c: TimerConfig, others: Seq[TimerConfig] = Seq())(globalReactorConfi
       if (globalReactorConfig.timeout != Time.NEVER) {
         // FIXME: It is quite inefficient to do this comparison
         when(now > globalReactorConfig.timeout.ticks.U && now < Time.FOREVER.ticks.U) {
-          regCountdownOther := Tag.FOREVER.time
+          regCountdownOther := Tag.FOREVER
         }
       }
     }
@@ -107,7 +107,7 @@ class Timer(c: TimerConfig, others: Seq[TimerConfig] = Seq())(globalReactorConfi
     // If a timeout was specified then freeze everything after this
     if (globalReactorConfig.timeout != Time.NEVER) {
       when(now > globalReactorConfig.timeout.ticks.U && now < Time.FOREVER.ticks.U) {
-        regCountdownMe := Tag.FOREVER.time
+        regCountdownMe := Tag.FOREVER
         coordinationIo.idle := true.B
       }
     }

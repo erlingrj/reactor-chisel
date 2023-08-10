@@ -1,43 +1,27 @@
 package reactor
-
 import chisel3._
 
-class Tag extends Bundle {
-  val time = UInt(64.W)
-  def +(other: UInt): Tag =Tag( this.time + other)
-  def +(other: Tag): Tag = Tag(this.time + other.time)
-
-}
-
 object Tag {
-  def FOREVER: Tag = {
-    val tag = Wire(new Tag())
-    tag.time := Time.FOREVER.ticks.U(64.W)
-    tag
+  def FOREVER: UInt = {
+    Time.FOREVER.ticks.U(width.W)
   }
 
-  def NEVER: Tag = {
-    val tag = Wire(new Tag())
-    tag.time := Time.NEVER.ticks.U(64.W)
-    tag
+  def NEVER: UInt = {
+    Time.NEVER.ticks.S(width.W).asUInt
   }
 
-  def apply(initialValue: Long): Tag = {
-    val tag = Wire(new Tag())
-    tag.time := initialValue.U
-    tag
+  def apply(): UInt = UInt(width.W)
+
+  def apply(initialValue: Long): UInt = {
+    initialValue.U(width.W)
   }
 
-  def apply(initialValue: UInt): Tag = {
-    val tag = Wire(new Tag())
-    tag.time := initialValue
-    tag
+  def apply(initialValue: UInt): UInt = {
+    initialValue
   }
 
-  def apply(initialValue: Time): Tag = {
-    val tag = Wire(new Tag())
-    tag.time := initialValue.ticks
-    tag
+  def apply(initialValue: Time): UInt  = {
+    initialValue.ticks.U
   }
 
   def width: Int = 64

@@ -27,7 +27,7 @@ class FifoToken[T <: Data](gen:T, depth: Int) extends Token(gen) {
 }
 
 // Create a separate class hierarchy for SwTokens, i.e. tokens coming from Software reactors
-abstract class SwToken[T <: Data](gen: T) extends Token(gen) {
+abstract class SwToken[T <: Data](gen: T) extends Bundle {
   val present = Bool()
 }
 class SwSingleToken[T <: Data](gen: T) extends SwToken(gen) {
@@ -156,7 +156,7 @@ class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (genData: T1, genToken: T2) 
   }
 
   def write(d: T1): Unit = {
-    assert(ready)
+    assert(ready, "[Event] Tried writing to a port which was not ready")
     req.valid := true.B
     req.present := true.B
     genToken match {

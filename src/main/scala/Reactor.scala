@@ -19,13 +19,14 @@ case class GlobalReactorConfig(
                               )
 
 abstract class ReactorIO extends Bundle {
-  val idle = Output(Bool())
-
   // All the ReactorIO implementations must provide a driveDefaults function which can "plug" any ununsed ports
   // Both from the inside and the outside (flipped)
   def driveDefaultsFlipped(): Unit
   def driveDefaults(): Unit
+}
 
+class ReactorStatusIO extends Bundle {
+  val idle = Output(Bool())
 }
 // FIXME: We need an optional precedence input port which should be connected to the first reaction of the reactor
 
@@ -51,6 +52,8 @@ abstract class Reactor extends Module {
   // The external (input/output with @physical attribute) ports which can be read and written from reactions.
   val externalIO: ReactorExternalIO
 
+  val statusIO = IO(new ReactorStatusIO)
+
   // FIXME: These vars should maybe be prependend with _
   var reactions: ArrayBuffer[Reaction] = new ArrayBuffer()
   var inPorts: ArrayBuffer[InputPort[_ <: Data, _ <: Token[_<: Data]]] = new ArrayBuffer()
@@ -63,13 +66,13 @@ abstract class Reactor extends Module {
 
   // Is the current Reactor (and any contained reactor idle?)
   def isIdle(): Bool = {
-    ( childReactors.map(_.io.idle) ++
+    ( childReactors.map(_.statusIO.idle) ++
       inPorts.map(!_.io.outward.resp.valid)
       ).reduceOption(_ && _).getOrElse(true.B)
   }
 
   def reactorMain(): Unit = {
-    io.idle := isIdle()
+    statusIO.idle := isIdle()
     assert(util.PopCount(reactions.map(_.statusIO.state === Reaction.sRunning)) <= 1.U, "[Reactor.scala] Mutual exclusion between reactions not preserved")
     connectExternalIOInternally()
     fixNaming()

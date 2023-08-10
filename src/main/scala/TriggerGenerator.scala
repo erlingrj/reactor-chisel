@@ -1,103 +1,166 @@
 package reactor
 
-import Chisel.Decoupled
 import chisel3._
+import chisel3.util._
+import reactor.Schedule._
 
+import scala.collection.immutable
+import scala.collection.mutable.ArrayBuffer
 
 class TimerTriggerIO(nTimers: Int) extends Bundle {
   val timers = Vec(nTimers, new TriggerIO())
+  def driveDefaults() = {
+    timers.foreach(_.trigger.driveDefaults())
+  }
 }
 
 class CoordinationIO extends Bundle {
-  val nextEventTag = Output(new Tag)
-  val tagAdvanceGrant = Input(new Tag)
-  val logicalTagComplete = Output(new Tag)
+  val nextEventTag = Output(Tag())
+  val tagAdvanceGrant = Input(Tag())
+  val logicalTagComplete = Output(Tag())
+  val requestShutdown = Input(Bool()) // External request for termination at TAG
 
   def driveDefaults(): Unit = {
-    nextEventTag.time := 0.U
+    nextEventTag := 0.U
     logicalTagComplete := Tag.FOREVER
   }
+
+  def connectChild(c: CoordinationIO) = {
+    nextEventTag := c.nextEventTag
+    c.tagAdvanceGrant := tagAdvanceGrant
+    logicalTagComplete := c.logicalTagComplete
+    c.requestShutdown := requestShutdown
+  }
 }
 
-class SwIO(swInputsGen: () => SwInputs, swOuptutsGen: () => SwOutputs) extends Bundle {
-  val swInputs = Input(swInputsGen())
-  val swOutputs = Output(swOuptutsGen())
-  val test = Flipped(Decoupled(Bool()))
+class MainClockIO extends Bundle {
+  val setTime = Flipped(Valid(Tag()))
+  val now = Output(Tag())
+
+  def driveDefaultsFlipped() = {
+    setTime.valid := false.B
+    setTime.bits := Tag(0)
+  }
+}
+class MainClock extends Module {
+  val io = IO(new MainClockIO())
+
+  val regClock = RegInit(Tag(0))
+  when(io.setTime.valid) {
+    regClock := io.setTime.bits
+  }.otherwise {
+    regClock := regClock + 1.U
+  }
+  io.now := regClock
 }
 
-class MainReactorIO(mainReactorInputsGen: () => Bundle, mainReactorOutputsGen: () => Bundle) extends Bundle {
-  val mainReactorInputs = mainReactorInputsGen
-  val mainReactorOutputs = mainReactorOutputsGen
+/**
+ * The TriggerGenerator is in charge of driving and reading tokens on the top-level ports of the main reactor.
+ * It performs the control logic involved in coordinating the logical time of the hardware and the software
+ * @param mainReactor
+ */
+
+class ExecuteIO extends Bundle {
+  val eventMode = Output(EventMode())
+  val tag = Output(Tag())
+
+  def driveDefaults() = {
+    eventMode := EventMode.noEvent
+    tag := Tag(0)
+  }
 }
 
-case class TriggerGeneratorParams (
-  mainReactor: Reactor,
-  swInputsGen: () => SwInputs,
-  swOutputsGen: () => SwOutputs,
-  mainReactorInputsGen: () => Bundle,
-  mainReactorOutputsGen: () => Bundle,
-)
+class TriggerGeneratorIO(nTimers: Int) extends Bundle {
+  val triggers = new TimerTriggerIO(nTimers)
+  val coordination = new CoordinationIO()
+  val execute = Decoupled(new ExecuteIO())
 
-class TriggerGenerator(p: TriggerGeneratorParams) extends Module {
-  val timerTriggerIO = IO(new TimerTriggerIO(p.mainReactor.triggerIO.allTriggers.size))
-  val coordinationIO = IO(new CoordinationIO())
-  val SwIO = IO(new SwIO(p.swInputsGen, p.swOutputsGen))
-  val mainReactorIO = IO(new MainReactorIO(p.mainReactorInputsGen, p.mainReactorOutputsGen))
-
-
-  val scheduleParams = ScheduleParams(
-    triggerVecs =
-  )
-
-}
-
-class MainTriggerGeneratorIO(nTimers: Int) extends Bundle {
-  val timers = Vec(nTimers, new TriggerIO())
-  val nextEventTag = Output(new Tag)
-  val tagAdvanceGrant = Input(new Tag)
-  val mainReactorIdle = Input(Bool())
+  val inputPresent = Input(Bool())
   val terminate = Output(Bool())
 
-  def driveDefaults(): Unit = {
-    if (directionOf(nextEventTag) == ActualDirection.Output) {
-      nextEventTag.time := 0.U
-      terminate := false.B
-    } else {
-      tagAdvanceGrant := 0.U
-    }
+  def driveDefaults() = {
+    triggers.driveDefaults()
+    coordination.driveDefaults()
+    execute.valid := false.B
+    execute.bits.driveDefaults()
+    terminate := false.B
   }
 }
 
-// FIXME: This MainTimer doesnt do any time coordination yet. It should have
-class MainTriggerGenerator(mainReactor: Reactor)(implicit val globalCfg: GlobalReactorConfig) extends Module {
-  val mainReactorTriggers = mainReactor.localTriggers ++ mainReactor.containedTriggers
-  val mainReactorTriggerIOs = mainReactor.triggerIO.localTriggers ++ mainReactor.triggerIO.containedTriggers
-  val io = IO(new MainTriggerGeneratorIO(mainReactorTriggers.size))
+class TriggerGenerator(timeout: Time, mainReactor: Reactor) extends Module {
+  val nTimers = mainReactor.triggerIO.allTriggers.size
+  val io = IO(new TriggerGeneratorIO(nTimers))
   io.driveDefaults()
 
-  println(s"MainTimer created for program where main has  ${mainReactor.containedTriggers.size} contained + ${mainReactor.containedTriggers.size} top-level timers")
+  // The clock
+  val mainClock = Module(new MainClock()).io
+  mainClock.driveDefaultsFlipped()
 
-  // Create the HW counters
-  // FIXME: This should be optimized. I am reusing the old timer module, we can instead create a
-  //  single timer with a single hyperperiod
-  val allTimerConfigs = mainReactorTriggers.map(_.cfg)
-  val timers = for (t <- mainReactorTriggers) yield Module(new Timer(t.cfg, allTimerConfigs.toSeq.diff(Seq(t.cfg)))(globalCfg))
-  // Connect the HW counters to top-level IO through a FIFO to allow some buffering
-  for ((timer, timerIO) <- timers zip io.timers) {
-    val fifo = Module(new EventWriteQueue(genData = UInt(0.W), genToken = new PureToken, nEntries = 2))
-    fifo.io.enq <> timer.io.trigger
-    fifo.io.deq <> timerIO.trigger
+  // Create the schedule and the event queue.
+  val (hyperperiod, initialSchedule, periodicSchedule, shutdown) = createSchedules(mainReactor.allTriggerConfigs().map(_.cfg).toSeq)
+  printSchedules((initialSchedule, periodicSchedule))
+  val eventQueueParams = EventQueueParams(
+    nTimers,
+    hyperperiod,
+    timeout,
+    shutdown,
+    initialSchedule,
+    periodicSchedule)
+
+  val eventQueue = Module(new EventQueue(eventQueueParams)).io
+  eventQueue.driveDefaultsFlipped()
+  io.terminate := eventQueue.terminate
+
+  // The scheduler
+  val scheduler = Module(new Scheduler()).io
+  scheduler.tagAdvanceGrant := io.coordination.tagAdvanceGrant
+  scheduler.now := mainClock.now
+  scheduler.swInputPresent := io.inputPresent
+  scheduler.nextEventTag := eventQueue.nextEventTag
+  scheduler.execute <> io.execute
+
+
+  // State machine for handling the firing of each event. We allow backpressure from the Reactors.
+  // I.e. we will block in sFiring until all reactors are ready to receive the events.
+  val sIdle :: sFiring :: Nil = Enum(2)
+  val regState = RegInit(sIdle)
+  val regTriggerFired = RegInit(VecInit(Seq.fill(nTimers)(false.B)))
+
+  switch (regState) {
+    is (sIdle) {
+      when (scheduler.execute.valid) {
+        regState := sFiring
+      }
+    }
+
+    // We stay in this state until all the triggers have fired sucessfully. Essentially, we are allowing
+    // backpressure. This implies that we might be backpressured for a long enough time so that we lose events.
+    is (sFiring) {
+      for (i <- 0 until io.triggers.timers.size) {
+        when(!regTriggerFired(i)) {
+          when(io.triggers.timers(i).trigger.ready) {
+            when(EventMode.hasLocalEvent(scheduler.execute.bits.asUInt)) {
+              io.triggers.timers(i).trigger.req.valid := true.B
+              io.triggers.timers(i).trigger.req.present := eventQueue.triggerVec(i)
+              io.triggers.timers(i).trigger.req.token.tag := eventQueue.nextEventTag
+              io.triggers.timers(i).trigger.fire := true.B
+            }.elsewhen(EventMode.hasExternalEvent(scheduler.execute.bits.asUInt)) {
+              io.triggers.timers(i).trigger.writeAbsent()
+            }
+            regTriggerFired(i) := true.B
+          }
+        }
+      }
+
+      // Check that all events have been fired. If so, go back to accepting new events.
+      when (regTriggerFired.asUInt.andR) {
+        when(EventMode.hasLocalEvent(scheduler.execute.bits.asUInt)) {
+         eventQueue.step := true.B
+        }
+        regState := sIdle
+        regTriggerFired.foreach(_ := false.B)
+        scheduler.execute.ready := true.B
+      }
+    }
   }
-
-  // Termination condition. 10 CCs with everything idle
-  val terminate = timers.map(_.coordinationIo.idle).reduceOption(_ && _).getOrElse(true.B) && io.mainReactorIdle
-  val regTerminateCountDown = RegInit(10.U)
-
-  when (terminate) {
-    regTerminateCountDown := regTerminateCountDown - 1.U
-  } otherwise {
-    regTerminateCountDown := 10.U
-  }
-
-  io.terminate := regTerminateCountDown === 0.U
 }
