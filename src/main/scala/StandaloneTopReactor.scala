@@ -11,19 +11,21 @@ class StandaloneTopReactor(mainReactorGenFunc: () => Reactor)(implicit globalCfg
   val externalIO = IO(mainReactor.externalIO.cloneType)
   externalIO <> mainReactor.externalIO
 
-  val triggerGenerator = Module(new TriggerGenerator(globalCfg.timeout, mainReactor))
+  val trigGen = Module(new TriggerGenerator(true, globalCfg.timeout, mainReactor))
 
   // Connect the triggerGenerator to the mainReactor
   for (i <- mainReactor.triggerIO.allTriggers.indices) {
-    mainReactor.triggerIO.allTriggers(i) <> triggerGenerator.io.triggers.timers(i).trigger
+    mainReactor.triggerIO.allTriggers(i) <> trigGen.io.triggers.timers(i).trigger
   }
 
-  val coordinationIO = triggerGenerator.io.coordination
-  triggerGenerator.io.inputPresent := false.B
-  coordinationIO.tagAdvanceGrant := Tag.FOREVER
+  trigGen.io.inputPresent := false.B
+  trigGen.io.execute.ready := true.B
+  trigGen.io.shutdownCommand:= 0.U.asTypeOf(new ShutdownCommand)
+  trigGen.io.tagAdvanceGrant := Tag.FOREVER
+  trigGen.io.coordinationValid := true.B
   // Plug any top-level
   mainReactor.io.driveDefaultsFlipped()
 
   // Terminate when triggerGenerator has fired the shutdown trigger AND all reactors are idle
-  io.terminate := triggerGenerator.io.terminate && mainReactor.statusIO.idle
+  io.terminate := trigGen.io.terminate && mainReactor.statusIO.idle
 }

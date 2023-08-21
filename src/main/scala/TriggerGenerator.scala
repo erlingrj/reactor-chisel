@@ -14,22 +14,20 @@ class TimerTriggerIO(nTimers: Int) extends Bundle {
   }
 }
 
+class ShutdownCommand extends Bundle {
+  val valid = Bool() // Is the shutdown valid
+  val independent = Bool() // Is the shutdown simultanous to an event from the FPGA?
+}
+
 class CoordinationIO extends Bundle {
   val nextEventTag = Output(Tag())
   val tagAdvanceGrant = Input(Tag())
   val logicalTagComplete = Output(Tag())
-  val requestShutdown = Input(Bool()) // External request for termination at TAG
+  val shutdownCommand = Input(new ShutdownCommand) // External request for termination at TAG
 
   def driveDefaults(): Unit = {
     nextEventTag := 0.U
     logicalTagComplete := Tag.FOREVER
-  }
-
-  def connectChild(c: CoordinationIO) = {
-    nextEventTag := c.nextEventTag
-    c.tagAdvanceGrant := tagAdvanceGrant
-    logicalTagComplete := c.logicalTagComplete
-    c.requestShutdown := requestShutdown
   }
 }
 
@@ -72,7 +70,10 @@ class ExecuteIO extends Bundle {
 
 class TriggerGeneratorIO(nTimers: Int) extends Bundle {
   val triggers = new TimerTriggerIO(nTimers)
-  val coordination = new CoordinationIO()
+  val nextEventTag = Output(Tag())
+  val tagAdvanceGrant = Input(Tag())
+  val shutdownCommand = Input(new ShutdownCommand) // External request for termination at TAG
+  val coordinationValid = Input(Bool())
   val execute = Decoupled(new ExecuteIO())
 
   val inputPresent = Input(Bool())
@@ -80,14 +81,14 @@ class TriggerGeneratorIO(nTimers: Int) extends Bundle {
 
   def driveDefaults() = {
     triggers.driveDefaults()
-    coordination.driveDefaults()
     execute.valid := false.B
     execute.bits.driveDefaults()
     terminate := false.B
+    nextEventTag := Tag(0)
   }
 }
 
-class TriggerGenerator(timeout: Time, mainReactor: Reactor) extends Module {
+class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor) extends Module {
   val nTimers = mainReactor.triggerIO.allTriggers.size
   val io = IO(new TriggerGeneratorIO(nTimers))
   io.driveDefaults()
@@ -107,44 +108,65 @@ class TriggerGenerator(timeout: Time, mainReactor: Reactor) extends Module {
     initialSchedule,
     periodicSchedule)
 
-  val eventQueue = Module(new EventQueue(eventQueueParams)).io
-  eventQueue.driveDefaultsFlipped()
-  io.terminate := eventQueue.terminate
+  val eventQueue = if (standalone) Module(new EventQueueStandalone(eventQueueParams)) else Module(new EventQueueCodesign(eventQueueParams))
+
+  eventQueue.io.driveDefaultsFlipped()
+  io.terminate := eventQueue.io.terminate
+  io.nextEventTag := eventQueue.io.nextEventTag
+
+  if(!standalone) {
+    val eq = eventQueue.asInstanceOf[EventQueueCodesign]
+    eq.shutdownIO.simultanous := io.shutdownCommand.valid && !io.shutdownCommand.independent
+    eq.shutdownIO.independent := io.shutdownCommand.valid && io.shutdownCommand.independent
+    eq.shutdownIO.independentTag := io.tagAdvanceGrant
+  }
+
 
   // The scheduler
   val scheduler = Module(new Scheduler()).io
-  scheduler.tagAdvanceGrant := io.coordination.tagAdvanceGrant
+  scheduler.tagAdvanceGrant.bits := io.tagAdvanceGrant
+  scheduler.tagAdvanceGrant.valid := io.coordinationValid
   scheduler.now := mainClock.now
   scheduler.swInputPresent := io.inputPresent
-  scheduler.nextEventTag := eventQueue.nextEventTag
+  scheduler.nextEventTag := eventQueue.io.nextEventTag
   scheduler.execute <> io.execute
 
+  // The following is just for debug
+  val regLastEventTag = RegInit(Tag.NEVER)
+  when(scheduler.execute.fire) {
+    assert(!(scheduler.execute.bits.tag === regLastEventTag && !io.shutdownCommand.valid), "[TriggerGenerator] Scheduler fired twice with the same tag and it was not a shutdown")
+    regLastEventTag := scheduler.execute.bits.tag
+  }
 
   // State machine for handling the firing of each event. We allow backpressure from the Reactors.
   // I.e. we will block in sFiring until all reactors are ready to receive the events.
   val sIdle :: sFiring :: Nil = Enum(2)
   val regState = RegInit(sIdle)
+  val regExecute = RegInit(EventMode.noEvent)
   val regTriggerFired = RegInit(VecInit(Seq.fill(nTimers)(false.B)))
 
   switch (regState) {
     is (sIdle) {
+      scheduler.execute.ready := true.B
       when (scheduler.execute.valid) {
         regState := sFiring
+        regExecute := scheduler.execute.bits.eventMode
       }
     }
 
     // We stay in this state until all the triggers have fired sucessfully. Essentially, we are allowing
     // backpressure. This implies that we might be backpressured for a long enough time so that we lose events.
     is (sFiring) {
+      scheduler.execute.ready := false.B
       for (i <- 0 until io.triggers.timers.size) {
         when(!regTriggerFired(i)) {
           when(io.triggers.timers(i).trigger.ready) {
-            when(EventMode.hasLocalEvent(scheduler.execute.bits.asUInt)) {
+            when(EventMode.hasLocalEvent(regExecute.asUInt)) {
               io.triggers.timers(i).trigger.req.valid := true.B
-              io.triggers.timers(i).trigger.req.present := eventQueue.triggerVec(i)
-              io.triggers.timers(i).trigger.req.token.tag := eventQueue.nextEventTag
+              io.triggers.timers(i).trigger.req.present := eventQueue.io.triggerVec(i)
+              io.triggers.timers(i).trigger.req.token.tag := eventQueue.io.nextEventTag
               io.triggers.timers(i).trigger.fire := true.B
-            }.elsewhen(EventMode.hasExternalEvent(scheduler.execute.bits.asUInt)) {
+            }.elsewhen(EventMode.hasExternalEvent(regExecute.asUInt)) {
               io.triggers.timers(i).trigger.writeAbsent()
             }
             regTriggerFired(i) := true.B
@@ -154,12 +176,11 @@ class TriggerGenerator(timeout: Time, mainReactor: Reactor) extends Module {
 
       // Check that all events have been fired. If so, go back to accepting new events.
       when (regTriggerFired.asUInt.andR) {
-        when(EventMode.hasLocalEvent(scheduler.execute.bits.asUInt)) {
-         eventQueue.step := true.B
+        when(EventMode.hasLocalEvent(regExecute.asUInt)) {
+         eventQueue.io.step := true.B
         }
         regState := sIdle
         regTriggerFired.foreach(_ := false.B)
-        scheduler.execute.ready := true.B
       }
     }
   }

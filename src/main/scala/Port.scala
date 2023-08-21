@@ -308,3 +308,16 @@ class TopOutputPort[T1 <: Data, T2 <: SwToken[T1]](c: TopOutputPortConfig[T1, T2
   }
   assert(!(io.in.resp.valid && RegNext(io.in.resp.valid)), "[Port.scala] TopOutputPort fired twice in row")
 }
+
+class UnconnectedInputPortIO[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) extends Bundle {
+  val writeAbsent = Input(Bool())
+  val write = new EventWriteMaster(genData, genToken)
+}
+
+class UnconnectedInputPort[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) extends Module {
+  val io = IO(new UnconnectedInputPortIO(genData, genToken))
+  io.write.driveDefaults()
+  when(io.writeAbsent) {
+    io.write.writeAbsentAndFire()
+  }
+}

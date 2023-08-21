@@ -167,6 +167,11 @@ class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (genData: T1, genToken: T2) 
     }
   }
 
+  def writeAbsentAndFire(): Unit = {
+    writeAbsent()
+    fire := true.B
+  }
+
   def writeAbsent(): Unit = {
     assert(ready)
     req.valid := true.B

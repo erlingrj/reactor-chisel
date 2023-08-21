@@ -197,26 +197,78 @@ class EventQueue(p: EventQueueParams) extends Module {
   } else {
     println("Empty schedule. Only compiling a shell for the EventQueue")
   }
+}
 
+class EventQueueStandalone(p: EventQueueParams) extends EventQueue(p) {
   if (p.shutdownTime != Time.NEVER) {
     val regDone = RegInit(false.B)
 
-    when(nextLocalEvent > p.shutdownTime.ticks.U) {
+    when(nextLocalEvent >= p.shutdownTime.ticks.U) {
       io.nextEventTag := p.shutdownTime.ticks.U
 
-      for ((triggerIO, trigger) <- io.triggerVec zip p.shutdownTriggers.triggers) {
-        triggerIO := trigger.B
+      when (nextLocalEvent > p.shutdownTime.ticks.U) {
+        // We have a shutdown trigger at an independent tag. Only trigger shutdown reactions
+        for ((triggerIO, trigger) <- io.triggerVec zip p.shutdownTriggers.triggers) {
+          triggerIO := trigger.B
+        }
+      }.otherwise {
+        // We have a shutdown trigger simultanous with other triggers. Only enable shutdown reactions. Dont tluch other
+        // triggers.
+        for (idx <- p.shutdownTriggers.triggers.indices) {
+          if (p.shutdownTriggers.triggers(idx)) {
+            io.triggerVec(idx) := true.B
+          }
+        }
       }
-
-      when (io.step) {
+      // Wait for acceptance of this event
+      when(io.step) {
         regDone := true.B
       }
     }
 
-    when (regDone) {
+    // Set next NET to NEVER and suggest termination
+    when(regDone) {
       io.nextEventTag := Tag.NEVER
       io.terminate := true.B
     }
     assert(!(io.step && regDone))
+  }
+}
+
+
+class EventQueueCodesign(p: EventQueueParams) extends EventQueue(p) {
+  val shutdownIO = IO(new Bundle {
+    val simultanous = Input(Bool())
+    val independent = Input(Bool())
+    val independentTag = Input(Tag())
+  })
+
+  def doShutdown = shutdownIO.simultanous || shutdownIO.independent
+  val regDone = RegInit(false.B)
+
+  when(doShutdown) {
+    assert(p.shutdownTime != Time.NEVER, "[EventQueueCodesign] SW requested shutdown, but timeout is not specified.")
+    when(shutdownIO.simultanous) {
+      // Shutdown simultaneous with the local next event tag. Dont touch anything, just enable the shutdown triggers
+      for (idx <- p.shutdownTriggers.triggers.indices) {
+        if (p.shutdownTriggers.triggers(idx)) {
+          io.triggerVec(idx) := true.B
+        }
+      }
+    }.elsewhen(shutdownIO.independent) {
+      // We do shutdown at an independent tag.
+      io.nextEventTag := shutdownIO.independentTag
+      for ((triggerIO, trigger) <- io.triggerVec zip p.shutdownTriggers.triggers) {
+        triggerIO := trigger.B
+      }
+    }
+    when(io.step) {
+      regDone := true.B
+    }
+  }
+
+  when(regDone) {
+    io.terminate := true.B
+    io.nextEventTag := Tag.FOREVER
   }
 }

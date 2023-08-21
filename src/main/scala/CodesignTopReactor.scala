@@ -35,7 +35,7 @@ abstract class SwIO extends Bundle {
 // FIXME: Memports and PlatformWrapperParams should be parameters
 class CodesignTopReactorIO(swIOGen: () => SwIO) extends GenericAcceleratorIF(0, TesterWrapperParams) {
   val coordination = new CoordinationIO()
-  val cmd = Input(SwCommandType())
+  val cmd = Input(UInt(SwCommandType.getWidth.W))
   val ports = swIOGen()
   val terminate = Output(Bool())
 }
@@ -49,7 +49,7 @@ class SwInputPresent(nInputs: Int) extends Module {
     val write = Input(Bool())
   })
 
-  val token = RegInit(VecInit(Seq.fill(nInputs)(true.B)))
+  val token = RegInit(VecInit(Seq.fill(nInputs)(false.B)))
   io.presentOut zip token foreach(f => f._1.valid:= f._2)
   io.presentOut zip io.presentIn foreach (f => f._1.bits := f._2)
 
@@ -60,9 +60,44 @@ class SwInputPresent(nInputs: Int) extends Module {
   }
 
   when (io.write) {
+    assert(!token.asUInt.orR, "[SwInputPresent] SW wrote new inputs but the previous ones werent consumed yet")
     token.foreach(_ := true.B)
   }
 }
+
+class LtcHandlerIO(nOutputs: Int) extends Bundle {
+  val outputFires = Vec(nOutputs, Input(Bool()))
+  val execute = Flipped(Valid(new ExecuteIO))
+  val logicalTagComplete = Output(Tag())
+}
+
+class LtcHandler(nOutputs: Int) extends Module {
+  require(nOutputs > 0, "[LtcHandler] Does not support FPGA reactors without any outpits")
+  val io = IO(new LtcHandlerIO(nOutputs))
+
+  val regCurrentlyExecutingTag = RegInit(Tag(0))
+  val regLogicalTagComplete = RegInit(Tag.NEVER)
+  val regOutputsFired = RegInit(VecInit(Seq.fill(nOutputs)(false.B)))
+
+  io.logicalTagComplete := regLogicalTagComplete
+  for ((oFired, reg) <- io.outputFires zip regOutputsFired) {
+    when (oFired) {
+      assert(reg === false.B, "[LtcHandler] output fired. But it was already marked as fired")
+      reg := true.B
+    }
+  }
+
+  when(regOutputsFired.asUInt.andR) {
+    regLogicalTagComplete := regCurrentlyExecutingTag
+    regOutputsFired.foreach(_ := false.B)
+  }
+
+  when(io.execute.valid) {
+    assert(!regOutputsFired.asUInt.orR, "[LtcHandler] We started executing a new tag before the previous ended")
+    regCurrentlyExecutingTag := io.execute.bits.tag
+  }
+}
+
 
 
 class CodesignTopReactor(mainReactorGen: () => Reactor, swIOGen: () => SwIO)
@@ -72,7 +107,9 @@ class CodesignTopReactor(mainReactorGen: () => Reactor, swIOGen: () => SwIO)
   io.signature := makeDefaultSignature()
 
   val cmd = Module(new SwCommand()).io
-  cmd.cmdIn := io.cmd
+  val (cmdCast, validity) = SwCommandType.safe(io.cmd)
+  assert(validity)
+  cmd.cmdIn := cmdCast
 
   val mainReactor = Module(mainReactorGen())
   val externalIO = IO(mainReactor.externalIO.cloneType)
@@ -84,11 +121,12 @@ class CodesignTopReactor(mainReactorGen: () => Reactor, swIOGen: () => SwIO)
   swPorts.io.mainReactor <> mainReactor.io
   swPorts.io.swCmd := cmd.cmdOut
 
-  val triggerGen = Module(new TriggerGenerator(globalCfg.timeout, mainReactor))
+  val triggerGen = Module(new TriggerGenerator(false, globalCfg.timeout, mainReactor))
   triggerGen.io.inputPresent := swPorts.io.inputPresent
-  triggerGen.io.coordination.requestShutdown := false.B // FIXME: Request shutdown at TAG through this signal
-  io.coordination.connectChild(triggerGen.io.coordination)
+  io.coordination.nextEventTag := triggerGen.io.nextEventTag
+  triggerGen.io.tagAdvanceGrant := io.coordination.tagAdvanceGrant
   swPorts.io.execute <> triggerGen.io.execute
+  io.coordination.logicalTagComplete := swPorts.io.logicalTagComplete
 
   // Connect the triggerGenerator to the mainReactor
   for (i <- mainReactor.triggerIO.allTriggers.indices) {
@@ -97,6 +135,23 @@ class CodesignTopReactor(mainReactorGen: () => Reactor, swIOGen: () => SwIO)
 
   // Terminate when triggerGenerator has fired the shutdown trigger AND all reactors are idle
   io.terminate := triggerGen.io.terminate && mainReactor.statusIO.idle
+
+  // Drive the tag-validity signal
+  val regTAGValid = RegInit(false.B)
+  when(cmd.cmdOut === SwCommandType.write) {
+    regTAGValid := true.B
+  }
+  when(triggerGen.io.execute.fire && EventMode.hasExternalEvent(triggerGen.io.execute.bits.eventMode.asUInt)) {
+    regTAGValid := false.B
+  }
+  triggerGen.io.coordinationValid := regTAGValid
+
+  // Drive the shutdownCommand signal
+  val regShutdownCommand = RegInit(0.U.asTypeOf(new ShutdownCommand))
+  when (cmd.cmdOut === SwCommandType.write) {
+    regShutdownCommand := io.coordination.shutdownCommand
+  }
+  triggerGen.io.shutdownCommand := regShutdownCommand
 }
 
 
@@ -151,28 +206,14 @@ class TopLevelPorts(swPorts: SwIO, mainReactorPorts: ReactorIO) extends Module {
     f.io.execute.bits := io.execute.bits
   })
 
-  // Store the tags which are executed here in queue to be written to the LTC register when they are finished.
-  val tagQ = Module(new Queue(Tag(), entries = 4))
-  tagQ.io.enq.valid := io.execute.fire
-  tagQ.io.enq.bits := io.execute.bits.tag
-  assert(!(io.execute.fire && !tagQ.io.enq.ready))
-  tagQ.io.deq.ready := false.B
-
   // Handle the Output ports and the setting of the LTC
-  val logicalTagComplete = RegInit(Tag.NEVER)
-  io.logicalTagComplete := logicalTagComplete
-  val regPortWritten = RegInit(VecInit(Seq.fill(outputPorts.size)(false.B)))
-  for ((p,i) <- outputPorts.zipWithIndex) {
-    when (p.io.fire) {
-      regPortWritten(i) := true.B
-    }
-  }
-  when (regPortWritten.asUInt.andR) {
-    logicalTagComplete := tagQ.io.deq.bits
-    tagQ.io.deq.ready := true.B
-    assert(tagQ.io.deq.valid)
-    regPortWritten.foreach(_ := false.B)
-  }
+  val ltcHandler = Module(new LtcHandler(outputPorts.size)).io
+  ltcHandler.execute.valid := io.execute.fire
+  ltcHandler.execute.bits := io.execute.bits
+  ltcHandler.outputFires zip outputPorts foreach{f => f._1 := f._2.io.fire}
+  io.logicalTagComplete := ltcHandler.logicalTagComplete
+
+  outputPorts.foreach(_.io.consume := io.swCmd === SwCommandType.read)
 
   // Handle tokenization of the input ports
   val swInputPresent = Module(new SwInputPresent(inputPorts.size))
@@ -210,13 +251,13 @@ class TopLevelInputSingleToken[T <: Data](genData: T) extends TopLevelInput {
 
   when(io.execute.fire) {
     io.main.fire := true.B
+    io.swPresent.ready := true.B
+    assert(io.swPresent.fire)
     when (EventMode.hasExternalEvent(io.execute.bits.eventMode.asUInt)) {
-      assert(io.swPresent.fire)
       io.main.req.valid := true.B
       io.main.req.present := io.swPresent.bits
       io.main.req.token.data := io.swData
       io.main.req.token.tag := io.execute.bits.tag
-      io.swPresent.ready := true.B
     }.otherwise {
       io.main.writeAbsent()
     }
@@ -229,6 +270,7 @@ class TopLevelInputSingleToken[T <: Data](genData: T) extends TopLevelInput {
 abstract class TopLevelOutputIO extends Bundle {
   val ready = Input(Bool()) // Backpressure signal. Unless high, we will not accept tokens from the main reactor
   val fire = Output(Bool()) // Indicates that tokens from the main reactor have been consumed
+  val consume = Input(Bool())
 }
 
 abstract class TopLevelOutput extends Module {
@@ -255,9 +297,19 @@ class TopLevelOutputSingleToken[T <: Data](genData: T) extends TopLevelOutput {
   io.sw.present := regPresent
 
   io.main.ready := io.ready
-  when (io.main.fire) {
+
+  when (io.main.req.valid) {
     regData := io.main.req.token.data
     regPresent := io.main.req.present
-    assert(io.main.req.valid)
+    assert(io.ready)
+  }
+
+  when(io.consume) {
+    regPresent := false.B
+    regData := 0.U.asTypeOf(genData)
+  }
+
+  when(io.main.fire) {
+    io.fire := true.B
   }
 }

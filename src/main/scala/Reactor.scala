@@ -1,6 +1,7 @@
 package reactor
 
 import chisel3._
+import chisel3.experimental.DataMirror
 import chisel3.util.MixedVec
 import fpgatidbits.PlatformWrapper._
 import reactor.Reaction
@@ -63,6 +64,7 @@ abstract class Reactor extends Module {
   var localTriggers: ArrayBuffer[TimerTriggerVirtual] = new ArrayBuffer()
   var containedTriggers: ArrayBuffer[TimerTriggerVirtual] = new ArrayBuffer()
   var states: ArrayBuffer[State[_ <: Data, _ <: Token[_ <: Data]]] = new ArrayBuffer()
+  var unconnectedChildInPorts: ArrayBuffer[UnconnectedInputPort[_ <: Data, _ <: Token[_ <: Data]]] = new ArrayBuffer()
 
   // Is the current Reactor (and any contained reactor idle?)
   def isIdle(): Bool = {
@@ -75,6 +77,7 @@ abstract class Reactor extends Module {
     statusIO.idle := isIdle()
     assert(util.PopCount(reactions.map(_.statusIO.state === Reaction.sRunning)) <= 1.U, "[Reactor.scala] Mutual exclusion between reactions not preserved")
     connectExternalIOInternally()
+    driveUnconnectedPorts()
     fixNaming()
   }
 
@@ -112,6 +115,28 @@ abstract class Reactor extends Module {
 
     // Return the newly created ReactorTimerIO.
     timerIO
+  }
+
+  def driveUnconnectedPorts(): Unit = {
+
+    // Find any unconnected input port
+    for (port <- unconnectedChildInPorts) {
+      port.io.writeAbsent := false.B
+      // If we have any triggers, use a trigger to know when to write absent tokens into the unconnected ports.
+      if (triggerIO.allTriggers.nonEmpty) {
+        val trig = triggerIO.allTriggers.head
+        when(trig.fire) {
+          port.io.writeAbsent := true.B
+        }
+      } else if (inPorts.nonEmpty) {
+        // If not triggers, use an input port to know
+        val trig = inPorts.head
+        // Write an absent token only once, at the first cycle when we have a token on the inport
+        port.io.writeAbsent := trig.io.inward.head.resp.valid && !RegNext(trig.io.inward.head.resp.valid)
+      } else {
+        require(false, "Reactor has no way of knowing when to trigger unconnected port")
+      }
+    }
   }
 
   // TODO: It would be great to connect states to the reactions ReactionStateIO automatically, by matching names
