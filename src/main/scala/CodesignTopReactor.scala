@@ -176,17 +176,17 @@ class TopLevelPorts(swPorts: SwIO, mainReactorPorts: ReactorIO) extends Module {
   // matching and connect them accordingly
   for ((sw, main) <- io.sw.getElements zip io.mainReactor.getElements) {
     (sw, main) match {
-      case (s: SwSingleToken[Data],m: Vec[EventReadMaster[Data,SingleToken[Data]]])  => {
+      case (s: SwSingleToken[_],m: Vec[_])  => {
         // 1. We have an SingleToken Input port. Create the SwPort module and a connection object
         val swPort = Module(new TopLevelInputSingleToken(s.data.cloneType))
         val conn = new SingleValueConnectionFactory(s.data.cloneType)
         conn << swPort.io.main
-        conn >> m
+        conn >> m.asTypeOf(new EventSingleValueReadMaster(s.data))
         conn.construct()
         swPort.io.swData := s.data // Only connect the data through here. The present signal is handled below
         inputPorts += swPort
       }
-      case (s: SwSingleToken[Data], m: EventWriteMaster[Data, SingleToken[Data]]) => {
+      case (s: SwSingleToken[_], m: EventSingleValueWriteMaster[_]) => {
         // 1. We have an SingleToken output port. Connect it and gather all output ports in an array
         // for dealing with the LTC and backpressure.
         val swPort = Module(new TopLevelOutputSingleToken(s.data.cloneType))
@@ -235,7 +235,7 @@ abstract class TopLevelInput extends Module {
 
 class TopLevelInputSingleTokenIO[T <: Data](genData: T) extends TopLevelInputIO {
   val swData = Input(genData)
-  val main = new EventWriteMaster(genData, new SingleToken(genData))
+  val main = new EventSingleValueWriteMaster(genData)
 
   def driveDefaults() = {
     main.driveDefaults()
@@ -279,7 +279,7 @@ abstract class TopLevelOutput extends Module {
 
 class TopLevelOutputSingleTokenIO[T <: Data](genData: T) extends TopLevelOutputIO {
   val sw = Output(new SwSingleToken(genData))
-  val main = new EventWriteSlave(genData, new SingleToken(genData))
+  val main = new EventSingleValueWriteSlave(genData)
 
   def driveDefaults() = {
     main.driveDefaults()

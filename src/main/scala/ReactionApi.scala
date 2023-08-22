@@ -17,6 +17,16 @@ object ReactionApi {
     port.req.token.tag := reaction.logicalTag
   }
 
+  def lf_set[T1 <: Data, T2 <: Token[T1]](port: EventWriteMaster[T1, T2], addr: Int, data: T1)(implicit reaction: Reaction): Unit = {
+    port.write(data, addr)
+    port.req.token.tag := reaction.logicalTag
+  }
+
+  def lf_set[T1 <: Data, T2 <: Token[T1]](port: EventWriteMaster[T1, T2], addr: UInt, data: T1)(implicit reaction: Reaction): Unit = {
+    port.write(data, addr)
+    port.req.token.tag := reaction.logicalTag
+  }
+
   /**
    * Write data to an external output port
    * @param port
@@ -39,7 +49,15 @@ object ReactionApi {
    * @return
    */
   def lf_get[T1 <: Data, T2 <: Token[T1]](port: EventReadMaster[T1, T2]): T1 = {
-    port.read()
+    port.read
+  }
+
+  def lf_get[T1 <: Data, T2 <: Token[T1]](port: EventReadMaster[T1, T2], addr: Int): T1 = {
+    port.read(addr)
+  }
+
+  def lf_get[T1 <: Data, T2 <: Token[T1]](port: EventReadMaster[T1, T2], addr: UInt): T1 = {
+    port.read(addr)
   }
 
   /**

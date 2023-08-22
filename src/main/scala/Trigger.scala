@@ -26,7 +26,7 @@ case class TimerConfig(
 
 
 class TriggerIO extends Bundle {
-  val trigger = new EventWriteMaster(UInt(0.W), new PureToken())
+  val trigger = new EventPureWriteMaster
 }
 
 /**
@@ -150,11 +150,11 @@ class Timer(c: TimerConfig, others: Seq[TimerConfig] = Seq())(globalReactorConfi
 // actual hardware timer which contains the counters a token-generation logic for all the other timers.
 
 abstract class TriggerVirtual extends CircuitFactory {
-  var triggeredReactions: ArrayBuffer[EventReadMaster[UInt, PureToken]] = ArrayBuffer()
+  var triggeredReactions: ArrayBuffer[EventPureReadMaster] = ArrayBuffer()
   var inputTimerPort: EventWriteSlave[UInt, PureToken] = null;
 
   // Declare that this virtual timer triggers reaction `r`
-  def declareTriggeredReaction(r: EventReadMaster[UInt, PureToken]): Unit = {
+  def declareTriggeredReaction(r: EventPureReadMaster): Unit = {
     triggeredReactions += r
   }
 
@@ -168,7 +168,7 @@ abstract class TriggerVirtual extends CircuitFactory {
   // It will create a pure connection between the input port and the triggered reactions
   override def construct(): Seq[InputPort[UInt, PureToken]] = {
     val conn = new PureConnectionFactory()
-    val in = Module(new InputPort(InputPortConfig(0.U, new PureToken, triggeredReactions.length)))
+    val in = Module(new InputPortPure(InputPortConfig(0.U, new PureToken, triggeredReactions.length)))
 
     conn.addUpstream(inputTimerPort)
     conn.addDownstream(Seq(in.io.outward))

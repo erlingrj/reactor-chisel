@@ -17,11 +17,13 @@ class PureToken extends Token[UInt](UInt(0.W)) {
 class SingleToken[T <: Data](gen: T) extends Token(gen) {
   val data = gen
 }
-class ArrayToken[T <: Data](gen:T, depth: Int) extends Token(gen) {
+class ArrayToken[T <: Data](gen:T, val depth: Int) extends Token(gen) {
   val data = gen
   val valid = Bool()
+
+  def addrWidth = Math.max(1,log2Ceil(depth))
 }
-class FifoToken[T <: Data](gen:T, depth: Int) extends Token(gen) {
+class FifoToken[T <: Data](gen:T, val depth: Int) extends Token(gen) {
   val data = gen
   val valid = Bool()
 }
@@ -42,22 +44,14 @@ class SwArrayToken[T <: Data](gen: T) extends SwToken(gen) {
 
 
 class EventReadReq[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bundle {
-  gen1 match {
-    case _: ArrayToken[_] =>
-      require(false)
-      val addr = UInt(8.W)
-    case _: FifoToken[_] =>
-      val ready = Bool()
-    case _ =>
-  }
+  def driveDefaults() = {}
+}
 
-  def driveDefaults(): Unit = {
-    gen1 match {
-      case _: ArrayToken[_] =>
-        require(false)
-      case _: FifoToken[_] =>
-      case _ =>
-    }
+class EventArrayReadReq[T1 <: Data](gen1: T1, gen2: ArrayToken[T1]) extends EventReadReq(gen1,gen2) {
+  val addr = UInt(gen2.addrWidth.W)
+  override def driveDefaults(): Unit = {
+    super.driveDefaults()
+    addr := 0.U
   }
 }
 
@@ -71,7 +65,14 @@ class EventWriteReq[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bun
     present := false.B
     token := 0.U.asTypeOf(gen2)
   }
+}
 
+class EventArrayWriteReq[T1 <: Data](gen1: T1, gen2: ArrayToken[T1]) extends EventWriteReq(gen1,gen2) {
+  val addr = UInt(gen2.addrWidth.W)
+  override def driveDefaults(): Unit = {
+    super.driveDefaults()
+    addr := 0.U
+  }
 }
 
 class EventReadResp[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bundle {
@@ -87,10 +88,15 @@ class EventReadResp[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bun
   }
 }
 
-class EventReader[T1 <: Data, T2 <: Token[T1]] extends Bundle {}
-class EventReadMaster[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends EventReader[T1,T2] {
-  val req = Output(new EventReadReq(gen1,gen2))
-  val resp = Input(new EventReadResp(gen1,gen2))
+
+class EventReader[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bundle {
+  def genData = gen1
+  def genToken = gen2
+}
+
+abstract class EventReadMaster[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends EventReader(gen1, gen2) {
+  val req: EventReadReq[T1, T2]
+  val resp: EventReadResp[T1,T2]
   val fire = Output(Bool())
 
   def driveDefaultsFlipped(): Unit = {
@@ -101,32 +107,64 @@ class EventReadMaster[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends E
     req.driveDefaults()
     fire := false.B
   }
+  def read: T1
+  def read(addr: UInt): T1
+  def read(addr: Int): T1
 
-  def read(): T1 = {
-    gen2 match {
-      case _: SingleToken[T1] =>
-        resp.token.asInstanceOf[SingleToken[T1]].data
-      case _ =>
-        assert(false.B)
-        0.U.asInstanceOf[T1]
-    }
+}
+
+class EventArrayReadMaster[T1 <: Data](gen1: T1, gen2: ArrayToken[T1]) extends EventReadMaster(gen1, gen2) {
+  val req = Output(new EventArrayReadReq(gen1, gen2))
+  val resp = Input(new EventReadResp(gen1, gen2))
+
+  def read: T1 = {
+    require(false)
+    0.U.asTypeOf(gen1)
   }
 
-  def read(addr: UInt): T1 = {
-    gen2 match {
-      case _: ArrayToken[T1] =>
-        assert(false.B)
-        0.U.asInstanceOf[T1]
-      case _ =>
-        assert(false.B)
-        0.U.asInstanceOf[T1]
-    }
+  // FIXME: Does this work?
+  def read(addr: UInt) = {
+    req.addr := addr
+    WireInit(resp.token.data)
+  }
+
+  def read(addr: Int) = {
+    req.addr := addr.U
+    WireInit(resp.token.data)
   }
 }
 
-class EventReadSlave[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends EventReader[T1, T2] {
-  val req = Input(new EventReadReq(gen1, gen2))
-  val resp = Output(new EventReadResp(gen1, gen2))
+class EventSingleValueReadMaster[T1 <: Data](gen1: T1) extends EventReadMaster(gen1, new SingleToken(gen1)) {
+  val req = Output(new EventReadReq(gen1, new SingleToken(gen1)))
+  val resp = Input(new EventReadResp(gen1, new SingleToken(gen1)))
+
+  def read = resp.token.data
+
+  def read(addr: UInt): T1 = {
+    require(false)
+    0.U.asTypeOf(gen1)
+  }
+  def read(addr: Int): T1 = {
+    require(false)
+    0.U.asTypeOf(gen1)
+  }
+}
+class EventPureReadMaster extends EventReadMaster(UInt(0.W), new PureToken) {
+  val req = Output(new EventReadReq(UInt(0.W), new PureToken))
+  val resp = Input(new EventReadResp(UInt(0.W), new PureToken))
+
+  def read: UInt = {
+    require(false)
+    0.U
+  }
+
+  def read(addr: UInt): UInt = read
+  def read(addr: Int): UInt = read
+}
+
+abstract class EventReadSlave[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends EventReader(gen1, gen2) {
+  val req: EventReadReq[T1, T2]
+  val resp: EventReadResp[T1,T2]
   val fire = Input(Bool())
 
   def driveDefaultsFlipped(): Unit = {
@@ -139,12 +177,34 @@ class EventReadSlave[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Ev
   }
 }
 
-class EventWriter[T1 <: Data, T2 <: Token[T1]] extends Bundle {}
+class EventSingleValueReadSlave[T1 <: Data](gen1: T1) extends EventReadSlave(gen1, new SingleToken(gen1)) {
+  val req = Input(new EventReadReq(gen1, new SingleToken(gen1)))
+  val resp = Output(new EventReadResp(gen1, new SingleToken(gen1)))
+}
 
-class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (genData: T1, genToken: T2) extends EventWriter[T1,T2] {
-  val req = Output(new EventWriteReq(genData,genToken))
+class EventPureReadSlave extends EventReadSlave(UInt(0.W), new PureToken) {
+  val req = Input(new EventReadReq(UInt(0.W), new PureToken))
+  val resp = Output(new EventReadResp(UInt(0.W), new PureToken))
+}
+
+class EventArrayReadSlave[T1 <: Data](gen1: T1, gen2: ArrayToken[T1]) extends EventReadSlave(gen1, gen2) {
+  val req = Input(new EventArrayReadReq(gen1, gen2))
+  val resp = Output(new EventReadResp(gen1, gen2))
+}
+
+class EventWriter[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2:T2) extends Bundle {
+  def genData = gen1
+  def genToken = gen2
+}
+
+abstract class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (genData: T1, genToken: T2) extends EventWriter(genData,genToken) {
+  val req: EventWriteReq[T1, T2]
   val ready = Input(Bool())
   val fire = Output(Bool())
+
+  def write(d: T1): Unit
+
+  def write(d: T1, addr: UInt): Unit
 
   def driveDefaultsFlipped(): Unit = {
     ready := true.B
@@ -155,16 +215,11 @@ class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (genData: T1, genToken: T2) 
     req.driveDefaults()
   }
 
-  def write(d: T1): Unit = {
-    assert(ready, "[Event] Tried writing to a port which was not ready")
+  def writeAbsent(): Unit = {
+    assert(ready)
     req.valid := true.B
-    req.present := true.B
-    genToken match {
-      case _: SingleToken[T1] =>
-        req.token.asInstanceOf[SingleToken[T1]].data := d
-      case _: PureToken => // OK
-      case _ => assert(false.B)
-    }
+    req.present := false.B
+    req.token := DontCare
   }
 
   def writeAbsentAndFire(): Unit = {
@@ -172,25 +227,46 @@ class EventWriteMaster[T1 <: Data, T2 <: Token[T1]] (genData: T1, genToken: T2) 
     fire := true.B
   }
 
-  def writeAbsent(): Unit = {
-    assert(ready)
-    req.valid := true.B
-    req.present := false.B
-  }
-
-  def write(d: T1, addr: UInt): Unit = {
-    assert(ready)
-    req.valid := true.B
-    req.present := true.B
-    genToken match {
-      case _: ArrayToken[T1] => assert(false.B)
-      case _ => assert(false.B)
-    }
+  def write(d: T1, addr: Int): Unit = {
+    write(d,addr.U)
   }
 }
 
-class EventWriteSlave[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) extends EventWriter[T1,T2] {
-  val req = Input(new EventWriteReq(genData, genToken))
+class EventSingleValueWriteMaster[T1 <: Data] (genData: T1) extends EventWriteMaster(genData, new SingleToken(genData)) {
+  val req = Output(new EventWriteReq(genData,new SingleToken(genData)))
+
+  def write(d: T1): Unit = {
+    assert(ready, "[Event] Tried writing to a port which was not ready")
+    req.valid := true.B
+    req.present := true.B
+    req.token.data := d
+  }
+  def write(d: T1, addr: UInt): Unit = require(false)
+}
+
+class EventPureWriteMaster extends EventWriteMaster(UInt(0.W), new PureToken) {
+  val req = Output(new EventWriteReq(UInt(0.W), new PureToken))
+
+  def write(d: UInt): Unit = require(false)
+  def write(d: UInt, addr: UInt): Unit = require(false)
+}
+
+class EventArrayWriteMaster[T1 <: Data] (genData: T1, genToken: ArrayToken[T1]) extends EventWriteMaster(genData, genToken) {
+  val req = Output(new EventArrayWriteReq(genData,genToken))
+
+  def write(d: T1, addr: UInt): Unit = {
+    assert(ready, "[Event] Tried writing to a port which was not ready")
+    req.valid := true.B
+    req.addr := addr
+    req.present := true.B
+    req.token.data := d
+  }
+
+  def write(d: T1): Unit = require(false)
+}
+
+abstract class EventWriteSlave[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) extends EventWriter(genData, genToken) {
+  val req: EventWriteReq[T1,T2]
   val ready = Output(Bool())
   val fire = Input(Bool())
 
@@ -204,12 +280,31 @@ class EventWriteSlave[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) ex
   }
 }
 
+class EventSingleValueWriteSlave[T1 <: Data](genData: T1) extends EventWriteSlave(genData, new SingleToken(genData)) {
+  val req = Input(new EventWriteReq(genData, new SingleToken(genData)))
+}
+
+class EventPureWriteSlave extends EventWriteSlave(UInt(0.W), new PureToken) {
+  val req = Input(new EventWriteReq(UInt(0.W), new PureToken))
+}
+
+class EventArrayWriteSlave[T1 <: Data](genData: T1, genToken: ArrayToken[T1]) extends EventWriteSlave(genData, genToken) {
+  val req = Input(new EventArrayWriteReq(genData, genToken))
+}
+
 /**
  * A simple queue for buffering events coming out of the TriggerGenerator
  */
 class EventWriteQueueIO[T1<: Data, T2 <: Token[T1]](genData: T1, genToken: T2) extends Bundle {
-  val enq = new EventWriteSlave(genData,genToken)
-  val deq = new EventWriteMaster(genData, genToken)
+  val enq = genToken match {
+    case genToken1: SingleToken[T1] => new EventSingleValueWriteSlave(genData)
+    case _ => new EventArrayWriteSlave(genData, genToken.asInstanceOf[ArrayToken[T1]])
+  }
+
+  val deq = genToken match {
+    case genToken1: SingleToken[T1] => new EventSingleValueWriteMaster(genData)
+    case _ => new EventArrayWriteMaster(genData, genToken.asInstanceOf[ArrayToken[T1]])
+  }
 }
 
 class EventWriteQueue[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2, nEntries: Int = 2) extends Module {

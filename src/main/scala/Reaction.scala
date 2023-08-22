@@ -47,8 +47,8 @@ class ReactionStatusIO extends Bundle {
 }
 
 class ReactionPrecedencePorts(c: ReactionConfig) extends Bundle {
-  val precedenceIn = Vec(c.nPrecedenceIn, new EventReadMaster(UInt(0.W), new PureToken))
-  val precedenceOut = Vec(c.nPrecedenceOut, new EventWriteMaster(UInt(0.W), new PureToken))
+  val precedenceIn = Vec(c.nPrecedenceIn, new EventPureReadMaster)
+  val precedenceOut = Vec(c.nPrecedenceOut, new EventPureWriteMaster)
 
   def driveDefaults() = {
     precedenceIn.foreach(_.driveDefaults())

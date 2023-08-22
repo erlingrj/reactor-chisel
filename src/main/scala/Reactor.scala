@@ -38,8 +38,8 @@ abstract class ReactorExternalIO(children: ArrayBuffer[Reactor]) extends Bundle 
 }
 
 class ReactorTriggerIO(nLocalTriggers: Int, nContainedTriggers: Int) extends Bundle {
-  val localTriggers = Vec(nLocalTriggers, new EventWriteSlave(0.U, new PureToken))
-  val containedTriggers = Vec(nContainedTriggers, new EventWriteSlave(0.U, new PureToken))
+  val localTriggers = Vec(nLocalTriggers, new EventPureWriteSlave)
+  val containedTriggers = Vec(nContainedTriggers, new EventPureWriteSlave)
 
   def allTriggers = localTriggers ++ containedTriggers
 }
