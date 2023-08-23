@@ -11,8 +11,6 @@ jobs:
         uses: actions/checkout@v3
         with:
             submodules: recursive
-      - name: Prepare build environment
-        uses: ./.github/actions/setup-lf-env
       # - name: Setup Scala
       #   uses: olafurpg/setup-scala@v10
       #   with:
@@ -37,6 +35,8 @@ jobs:
           path: core/src/main/resources/lib/chisel/reactor-chisel
           submodules: recursive
           ref: ${{ github.ref }}
+      - name: Prepare build environment
+        uses: ./core/src/main/resources/lib/chisel/reactor-chisel/.github/actions/setup-lf-env
       - name: Smoke test
         run: ./bin/lfc test/Chisel/src/Timer.lf
       - name: Run Chisel tests;
