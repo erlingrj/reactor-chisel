@@ -21,6 +21,8 @@ jobs:
       #   uses: coursier/cache-action@v5
       - name: Unit tests
         run: make test
+      - name: Install verilator
+        run: sudo apt install verilator
       - name: Check out lingua-franca repository
         uses: actions/checkout@v3
         with:
@@ -37,8 +39,6 @@ jobs:
           ref: ${{ github.ref }}
       - name: Smoke test
         run: ./bin/lfc test/Chisel/src/Timer.lf
-      - name: Install verilator
-        run: sudo apt install verilator
       - name: Run Chisel tests;
         run: |
           ./gradlew core:integrationTest --tests org.lflang.tests.runtime.ChiselTest.run\*
