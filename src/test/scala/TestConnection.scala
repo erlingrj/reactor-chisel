@@ -72,7 +72,7 @@ object ConnectionSim {
 }
 
 class R1 extends Module {
-  val in1 = Module(new InputPort(
+  val in1 = Module(new InputPortSingleValue(
     InputPortConfig(
       defData,
       defToken,
@@ -81,7 +81,7 @@ class R1 extends Module {
   ))
 
   class TestReactorIO extends Bundle {
-    val in1 = Vec(1, new EventReadMaster(defData, defToken))
+    val in1 = Vec(1, new EventSingleValueReadMaster(defData))
   }
 
   val io = IO(new TestReactorIO)
@@ -91,13 +91,13 @@ class R1 extends Module {
 
 class TestConnectionBuilder extends Module {
   class TestIO extends Bundle {
-    val in1 = new EventReadMaster(defData, defToken)
-    val in2 = new EventReadMaster(defData, defToken)
-    val out = new EventWriteMaster(defData, defToken)
+    val in1 = new EventSingleValueReadMaster(defData)
+    val in2 = new EventSingleValueReadMaster(defData)
+    val out = new EventSingleValueWriteMaster(defData)
   }
   val io = IO(new TestIO)
 
-  val out = Module(new OutputPort(
+  val out = Module(new OutputPortSingleValue(
     OutputPortConfig(
       defData, defToken,
       nWriters = 1
@@ -105,7 +105,7 @@ class TestConnectionBuilder extends Module {
   ))
   out.io.plugInwards()
 
-  val in1 = Module(new InputPort(
+  val in1 = Module(new InputPortSingleValue(
     InputPortConfig(
       defData, defToken,
       nReaders = 1
@@ -113,7 +113,7 @@ class TestConnectionBuilder extends Module {
   ))
   in1.io.plugInwards()
 
-  val in2 = Module(new InputPort(
+  val in2 = Module(new InputPortSingleValue(
     InputPortConfig(
       defData, defToken,
       nReaders = 1
@@ -125,8 +125,9 @@ class TestConnectionBuilder extends Module {
   io.in1 <> in1.io.outward
   io.in2 <> in2.io.outward
 
-  val connFunc = (cfg: ConnectionConfig[UInt, SingleToken[UInt]]) => new SingleValueConnection(cfg)
-  val connBuilder = new ConnectionFactory(connFunc, defData, defToken)
+  val connBuilder = new SingleValueConnectionFactory(
+    defData
+  )
 
   connBuilder.addUpstream(out.io.outward)
   connBuilder.addDownstream(VecInit(in1.io.outward))

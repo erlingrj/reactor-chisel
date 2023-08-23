@@ -10,8 +10,36 @@ case class ReactionConfig(
                          nPrecedenceIn: Int = 0,
                          nPrecedenceOut: Int = 0
                          )
-abstract class ReactionIO() extends Bundle {}
-abstract class ReactionStateIO() extends Bundle {}
+abstract class ReactionIO() extends Bundle {
+  /**
+   * Drive all the IOs of the Reaction to default inactive values.
+   */
+  def driveDefaults(): Unit = {
+    for (elt <- this.getElements) {
+      elt match {
+        case value: EventReadMaster[_,_] => value.driveDefaults()
+        case value: EventWriteMaster[_,_] => value.driveDefaults()
+        case value: StateReadWriteMaster[_,_] => value.driveDefaults()
+        case _ =>
+      }
+    }
+  }
+}
+abstract class ReactionStateIO() extends Bundle {
+
+  // This function iterates through all the elements of the bundle, casts them the StateReadWriteMaster
+  // and drives the default values.
+  def driveDefaults(): Unit = {
+    for(elt <- this.getElements) {
+      elt.asInstanceOf[StateReadWriteMaster[_ <: Data, _ <: Token[_ <: Data]]].driveDefaults()
+    }
+  }
+}
+
+
+abstract class ExternalIO() extends Bundle {
+
+}
 
 // FIXME: Hide behind global debug?
 class ReactionStatusIO extends Bundle {
@@ -19,8 +47,8 @@ class ReactionStatusIO extends Bundle {
 }
 
 class ReactionPrecedencePorts(c: ReactionConfig) extends Bundle {
-  val precedenceIn = Vec(c.nPrecedenceIn, new EventReadMaster(UInt(0.W), new PureToken))
-  val precedenceOut = Vec(c.nPrecedenceOut, new EventWriteMaster(UInt(0.W), new PureToken))
+  val precedenceIn = Vec(c.nPrecedenceIn, new EventPureReadMaster)
+  val precedenceOut = Vec(c.nPrecedenceOut, new EventPureWriteMaster)
 
   def driveDefaults() = {
     precedenceIn.foreach(_.driveDefaults())
@@ -54,18 +82,18 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
   val physicalTag = RegInit(0.U(64.W))
   physicalTag := physicalTag + 1.U
   def driveDefaults(): Unit = {
-    triggers.foreach(_.driveDefaults())
-    dependencies.foreach(_.driveDefaults())
-    antiDependencies.foreach(_.driveDefaults())
+    io.driveDefaults()
     precedenceIn.foreach(_.driveDefaults())
     precedenceOut.foreach(_.driveDefaults())
+    stateIO.driveDefaults()
   }
 
   // Conditions to fire a reaction
   def fireReaction: Bool = {
       triggers.map(_.resp.valid).reduce(_ && _) &&
         dependencies.map(_.resp.valid).foldLeft(true.B)(_ && _)  &&
-        precedenceIn.map(_.resp.valid).foldLeft(true.B)(_ && _)
+        precedenceIn.map(_.resp.valid).foldLeft(true.B)(_ && _) &&
+        antiDependencies.map(_.ready).foldLeft(true.B)(_ && _)
   }
 
   // FIXME: Do operator overloading so we can do "r1 > r2 > r3 > r4`
@@ -77,8 +105,8 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
 
     // Create connection module for connecting the ports
     val connection = Module(new PureConnection(ConnectionConfig(
-      gen1 = UInt(0.W),
-      gen2 = new PureToken(),
+      genData = UInt(0.W),
+      genToken = new PureToken(),
       nChans = 1
     )))
 
@@ -109,11 +137,12 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
   def hasPresentTriggers: Bool = {
     triggers.map(_.resp.present).reduce(_ || _)
   }
-  // FIXME: This function should return a Bool which is true when it is done
-  def reactionBody: Unit
 
+  // This is the user-supplied reaction body
+  def reactionBody(): Unit
+
+  val reactionDone = WireDefault(true.B)
   val reactionEnable = WireDefault(false.B)
-  val reactionDone = WireDefault(false.B)
   val regState = RegInit(sIdle)
   val regCycles = RegInit(0.U(32.W))
 
@@ -147,8 +176,9 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
       is(sRunning) {
         regCycles := regCycles + 1.U
         reactionEnable := true.B
+        reactionDone := true.B
         withReset(!reactionEnable) {
-          reactionBody
+          reactionBody()
         }
         when(reactionDone) {
           regState := sDone

@@ -1,5 +1,4 @@
 package reactor
-import scala.util.matching.Regex
 
 class Time(val nanoseconds: Long) {
     override def toString: String = s"$ticks ticks"
@@ -31,10 +30,18 @@ class Time(val nanoseconds: Long) {
     def -(other: Time): Time = new Time(this.nanoseconds - other.nanoseconds)
     def %(other: Time): Time = new Time(this.nanoseconds % other.nanoseconds)
 
+  override def equals(obj: Any): Boolean = obj match {
+    case other: Time => this == other
+    case _ => false
+  }
+  override def hashCode: Int = nsec.hashCode
 }
 
 
 object Time {
+  implicit val timeOrdering: Ordering[Time] = Ordering.by(_.ticks)
+  val FOREVER = new Time(Long.MaxValue)
+  val NEVER = new Time(Long.MinValue)
   def nsec: Long => Time = (n: Long) => new Time(n)
   def usec: Long => Time = (n: Long) => new Time(n * 1000)
   def msec: Long => Time = (n: Long) => new Time(n * 1000000)

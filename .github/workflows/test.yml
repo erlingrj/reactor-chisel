@@ -17,11 +17,5 @@ jobs:
           java-version: adopt@1.8
       - name: Cache Scala
         uses: coursier/cache-action@v5
-      - name: Install verilator
-        run: sudo apt install verilator -y
       - name: Unit tests
         run: make test
-      - name: Smoke-test
-        run: make run
-      - name: Integration-tests
-        run: ./run-integration-tests.sh

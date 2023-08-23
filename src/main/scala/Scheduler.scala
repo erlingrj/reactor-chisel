@@ -2,78 +2,76 @@ package reactor
 
 import chisel3._
 import chisel3.util._
-import chisel3.experimental.VecLiterals._
-import chisel3.experimental.{DataMirror, Direction}
+
+// The Scheduler monitors the following signals and decides when to fire of events
+// NET: This comes from the Schedule and is the tag of the head of the event queue
+// TAG: This comes from the top-level IO (in case of co-design).
+
+// Enum of the different types of event modes. Either we have only local events (from our own EventQueue) or
+// we have only events from the SW. Or we have both.
+object EventMode extends ChiselEnum {
+  val noEvent, localOnly, externalOnly, localAndExternal = Value
+
+  def hasLocalEvent(eventMode: UInt): Bool = eventMode.asBools(0)
+  def hasExternalEvent(eventMode: UInt): Bool = eventMode.asBools(1)
+}
 
 
-case class SchedulerConfig(
-                          nTopInputPorts: Int = 0,
-                          nTopOutputPorts: Int = 0
-                          )
-class SchedulerIO(c: SchedulerConfig) extends Bundle {
-  val start = Input(Bool())
-  val done = Output(Bool())
-  val running = Output(Bool())
-  val fireOut = Vec(c.nTopOutputPorts, Input(Bool()))
-  val fireIn = Vec(c.nTopInputPorts, Output(Bool()))
+class SchedulerIO extends Bundle {
+  val execute = Decoupled(new ExecuteIO())
+  val nextEventTag = Input(Tag())
+  val tagAdvanceGrant = Input(Valid(Tag()))
+  val swInputPresent = Input(Bool())
+  val now = Input(Tag())
 
-  def driveDefaults() = {
-    done := false.B
-    running := false.B
-    fireIn.foreach(_ := false.B)
+  def trigger = execute.valid
+  def driveDefaults(): Unit = {
+    execute.valid := false.B
+    execute.bits := 0.U.asTypeOf(execute.bits)
   }
 }
 
-class Scheduler(c: SchedulerConfig) extends Module {
-  val io = IO(new SchedulerIO(c))
+class Scheduler extends Module {
+  val io = IO(new SchedulerIO())
   io.driveDefaults()
 
-  val sIdle :: sRunning :: sDone :: Nil = Enum(3)
-  val regState = RegInit(sIdle)
-  val regFired = RegInit(VecInit(Seq.fill(c.nTopOutputPorts)(false.B)))
+  def localEventReady = io.tagAdvanceGrant.valid && (io.now >= io.nextEventTag && io.tagAdvanceGrant.bits >= io.nextEventTag)
+  def externalEventReady = io.tagAdvanceGrant.valid && (io.now >= io.tagAdvanceGrant.bits && io.tagAdvanceGrant.bits <= io.nextEventTag && io.swInputPresent)
 
-  val regDone = RegInit(false.B)
-  io.done := regDone
-  io.running := regState === sRunning
+  assert(!(io.tagAdvanceGrant.valid && io.tagAdvanceGrant.bits > io.nextEventTag && io.tagAdvanceGrant.bits =/= Tag.FOREVER), "[Scheduler] TAG > NET not allowed yet")
+  val sIdle :: sFiring :: sWaitForNET :: Nil = Enum(3)
+  val regState = RegInit(sIdle)
 
   switch(regState) {
     is (sIdle) {
-      when (io.start) {
-        io.fireIn.foreach(_:=true.B)
-        regState := sRunning
-        regDone := false.B
+      when ((localEventReady || externalEventReady)) {
+        regState := sFiring
       }
     }
-    is (sRunning) {
-      for (i <- 0 until c.nTopOutputPorts) {
-        when (io.fireOut(i)) {
-          regFired(i) := true.B
-        }
+    is (sFiring) {
+      io.execute.valid := true.B
+      when(localEventReady && externalEventReady) {
+        io.execute.bits.eventMode := EventMode.localAndExternal
+        io.execute.bits.tag := io.nextEventTag
+      }.elsewhen(localEventReady) {
+        io.execute.bits.eventMode := EventMode.localOnly
+        io.execute.bits.tag := io.nextEventTag
+      }.elsewhen(externalEventReady) {
+        io.execute.bits.eventMode := EventMode.externalOnly
+        io.execute.bits.tag := io.tagAdvanceGrant.bits
+      }.otherwise {
+        io.execute.bits.eventMode := EventMode.noEvent
+        io.execute.bits.tag := 0.U
       }
 
-      when (util.PopCount(regFired) === c.nTopOutputPorts.U) {
-        regState := sDone
-        regDone := true.B
+      when(io.execute.fire) {
+        regState := sWaitForNET
       }
     }
-
-    is (sDone) {
-      regFired.foreach(_:=false.B)
-      regState := sIdle
+    is (sWaitForNET) {
+      when (io.execute.ready) {
+        regState := sIdle
+      }
     }
-  }
-
-  var outputIdx = 0
-  var inputIdx = 0
-  def connect(in: TopInputPort[_,_]): Unit = {
-    require(inputIdx < io.fireOut.length)
-    in.io.fire := io.fireIn(inputIdx)
-    inputIdx += 1
-  }
-
-  def connect(out: TopOutputPort[_,_]): Unit = {
-    require(outputIdx < io.fireOut.length)
-    io.fireOut(outputIdx) := out.io.fire
-    outputIdx += 1
   }
 }

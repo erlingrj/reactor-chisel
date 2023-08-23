@@ -7,7 +7,7 @@ ThisBuild / organization     := "com.github.erlingrj"
 val chiselVersion = "3.5.3"
 val chiselTestVersion = "0.5.1"
 
-lazy val root = (project in file("."))
+lazy val reactorchisel = (project in file("."))
   .settings(
     name := "reactor-chisel",
     libraryDependencies ++= Seq(
