@@ -8,14 +8,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
             submodules: recursive
-      - name: Setup Scala
-        uses: olafurpg/setup-scala@v10
-        with:
-          java-version: adopt@1.8
-      - name: Cache Scala
-        uses: coursier/cache-action@v5
+      # - name: Setup Scala
+      #   uses: olafurpg/setup-scala@v10
+      #   with:
+      #     java-version: adopt@1.8
+      # - name: Cache Scala
+      #   uses: coursier/cache-action@v5
       - name: Unit tests
         run: make test
+      - name: Install verilator
+        run: sudo apt install verilator
+      - name: Check out lingua-franca repository
+        uses: actions/checkout@v3
+        with:
+          repository: erlingrj/lingua-franca
+          submodules: true
+          ref: chisel3
+          fetch-depth: 0
+      - name: Check out specific ref of reactor-chisel
+        uses: actions/checkout@v3
+        with:
+          repository: erlingrj/reactor-chisel
+          path: core/src/main/resources/lib/chisel/reactor-chisel
+          submodules: recursive
+          ref: ${{ github.ref }}
+      - name: Prepare build environment
+        uses: ./core/src/main/resources/lib/chisel/reactor-chisel/.github/actions/setup-lf-env
+      - name: Smoke test
+        run: ./bin/lfc test/Chisel/src/Timer.lf
+      - name: Run Chisel tests;
+        run: |
+          ./gradlew core:integrationTest --tests org.lflang.tests.runtime.ChiselTest.run\*
+      
