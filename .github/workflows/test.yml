@@ -19,3 +19,24 @@ jobs:
         uses: coursier/cache-action@v5
       - name: Unit tests
         run: make test
+      - name: Check out lingua-franca repository
+        uses: actions/checkout@v3
+        with:
+          repository: erlingrj/lingua-franca
+          submodules: true
+          ref: chisel3
+          fetch-depth: 0
+      - name: Prepare build environment
+        uses: ./.github/actions/setup-lf-env
+      - name: Check out specific ref of reactor-chisel
+        uses: actions/checkout@v3
+        with:
+          repository: lf-lang/reactor-c
+          path: core/src/main/resources/lib/chisel/reactor-chisel
+          ref: ${{ github.ref }}
+      - name: Install verilator
+        run: sudo apt install verilator
+      - name: Run Chisel tests;
+        run: |
+          ./gradlew targetTest -Ptarget=Chisel
+      
