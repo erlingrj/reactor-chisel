@@ -33,10 +33,13 @@ jobs:
         with:
           repository: erlingrj/reactor-chisel
           path: core/src/main/resources/lib/chisel/reactor-chisel
+          submodules: recursive
           ref: ${{ github.ref }}
+      - name: Smoke test
+        run: ./bin/lfc test/Chisel/src/Timer.lf
       - name: Install verilator
         run: sudo apt install verilator
       - name: Run Chisel tests;
         run: |
-          ./gradlew targetTest -Ptarget=Chisel
+          ./gradlew core:integrationTest --tests org.lflang.tests.runtime.ChiselTest.run\*
       
