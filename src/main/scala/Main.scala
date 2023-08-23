@@ -3,7 +3,6 @@ package reactor
 import chisel3._
 import chisel3.experimental.BundleLiterals._
 import chisel3.util._
-import reactor.examples._
 import scala.sys.process.Process
 import java.nio.file.{Files, Paths}
 import fpgatidbits.PlatformWrapper.VerilatedTesterWrapper
