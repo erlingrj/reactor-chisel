@@ -13,12 +13,12 @@ jobs:
             submodules: recursive
       - name: Prepare build environment
         uses: ./.github/actions/setup-lf-env
-      - name: Setup Scala
-        uses: olafurpg/setup-scala@v10
-        with:
-          java-version: adopt@1.8
-      - name: Cache Scala
-        uses: coursier/cache-action@v5
+      # - name: Setup Scala
+      #   uses: olafurpg/setup-scala@v10
+      #   with:
+      #     java-version: adopt@1.8
+      # - name: Cache Scala
+      #   uses: coursier/cache-action@v5
       - name: Unit tests
         run: make test
       - name: Check out lingua-franca repository
