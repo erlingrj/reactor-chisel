@@ -24,7 +24,7 @@ object Settings {
   }
 }
  object ReactorChisel {
-   def mainStandalone(mainReactorFunc: () => Reactor, targetDir: String, binDir: String, name: String, globalCfg: GlobalReactorConfig): Unit = {
+   def mainStandalone(mainReactorFunc: () => Reactor, targetDir: String, name: String, globalCfg: GlobalReactorConfig): Unit = {
      println("------------------------------------------------------------------------------------------------------")
      println("Running Chisel compiler to generate verilator project")
      println("------------------------------------------------------------------------------------------------------")
@@ -39,16 +39,6 @@ object Settings {
      println("Building verilator project")
      println("------------------------------------------------------------------------------------------------------")
      val result = Process("make", new java.io.File(targetDir)).!
-     println("------------------------------------------------------------------------------------------------------")
-     println("Copying executable into bin dir. ")
-     println("------------------------------------------------------------------------------------------------------")
-     if (!Files.exists(Paths.get(binDir))) {
-       Files.createDirectories(Paths.get(binDir))
-     }
-     fpgatidbits.TidbitsMakeUtils.fileCopy(s"$targetDir/emu", s"$binDir/$name")
-     println("------------------------------------------------------------------------------------------------------")
-     println(s"To execute program run:`$binDir/$name`")
-     println("------------------------------------------------------------------------------------------------------")
    }
 
    def mainCodesign(mainReactorFunc: () => Reactor, mainReactorSwIOFunc: () => SwIO, targetDir: String, globalConfig: GlobalReactorConfig) = {
