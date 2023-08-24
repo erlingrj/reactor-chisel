@@ -15,10 +15,6 @@ case class PhysicalActionTriggerConfig(offset: Time) extends TriggerConfig()
 
 
 
-class TriggerIO extends Bundle {
-  val trigger = new EventPureWriteMaster
-}
-
 /**
  * Mainly used for coordinating shutdown and is thus primarily relevant for simulations. Not actual implementations
  */

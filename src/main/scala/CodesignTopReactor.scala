@@ -130,7 +130,7 @@ class CodesignTopReactor(mainReactorGen: () => Reactor, swIOGen: () => SwIO)
 
   // Connect the triggerGenerator to the mainReactor
   for (i <- mainReactor.triggerIO.allTriggers.indices) {
-    mainReactor.triggerIO.allTriggers(i) <> triggerGen.io.triggers.timers(i).trigger
+    mainReactor.triggerIO.allTriggers(i) <> triggerGen.io.triggers(i)
   }
 
   // Terminate when triggerGenerator has fired the shutdown trigger AND all reactors are idle
@@ -176,17 +176,19 @@ class TopLevelPorts(swPorts: SwIO, mainReactorPorts: ReactorIO) extends Module {
   // matching and connect them accordingly
   for ((sw, main) <- io.sw.getElements zip io.mainReactor.getElements) {
     (sw, main) match {
-      case (s: SwSingleToken[_],m: Vec[_])  => {
+      case (s: SwSingleToken[Data],m: Vec[EventSingleValueReadMaster[Data]])  => {
+        println(s"Got SingleToken input")
         // 1. We have an SingleToken Input port. Create the SwPort module and a connection object
         val swPort = Module(new TopLevelInputSingleToken(s.data.cloneType))
         val conn = new SingleValueConnectionFactory(s.data.cloneType)
         conn << swPort.io.main
-        conn >> m.asTypeOf(new EventSingleValueReadMaster(s.data))
+        conn >> m
         conn.construct()
         swPort.io.swData := s.data // Only connect the data through here. The present signal is handled below
         inputPorts += swPort
       }
-      case (s: SwSingleToken[_], m: EventSingleValueWriteMaster[_]) => {
+      case (s: SwSingleToken[Data], m: EventSingleValueWriteMaster[Data]) => {
+        println(s"Got SingleToken Output")
         // 1. We have an SingleToken output port. Connect it and gather all output ports in an array
         // for dealing with the LTC and backpressure.
         val swPort = Module(new TopLevelOutputSingleToken(s.data.cloneType))

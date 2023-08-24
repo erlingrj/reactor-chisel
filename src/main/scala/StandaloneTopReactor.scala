@@ -15,7 +15,7 @@ class StandaloneTopReactor(mainReactorGenFunc: () => Reactor)(implicit globalCfg
 
   // Connect the triggerGenerator to the mainReactor
   for (i <- mainReactor.triggerIO.allTriggers.indices) {
-    mainReactor.triggerIO.allTriggers(i) <> trigGen.io.triggers.timers(i).trigger
+    mainReactor.triggerIO.allTriggers(i) <> trigGen.io.triggers(i)
   }
 
   trigGen.io.inputPresent := false.B

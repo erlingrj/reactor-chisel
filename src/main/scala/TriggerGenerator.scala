@@ -7,13 +7,6 @@ import reactor.Schedule._
 import scala.collection.immutable
 import scala.collection.mutable.ArrayBuffer
 
-class TimerTriggerIO(nTimers: Int) extends Bundle {
-  val timers = Vec(nTimers, new TriggerIO())
-  def driveDefaults() = {
-    timers.foreach(_.trigger.driveDefaults())
-  }
-}
-
 class ShutdownCommand extends Bundle {
   val valid = Bool() // Is the shutdown valid
   val independent = Bool() // Is the shutdown simultanous to an event from the FPGA?
@@ -69,7 +62,7 @@ class ExecuteIO extends Bundle {
 }
 
 class TriggerGeneratorIO(nTimers: Int) extends Bundle {
-  val triggers = new TimerTriggerIO(nTimers)
+  val triggers = Vec(nTimers, new EventPureWriteMaster())
   val nextEventTag = Output(Tag())
   val tagAdvanceGrant = Input(Tag())
   val shutdownCommand = Input(new ShutdownCommand) // External request for termination at TAG
@@ -80,7 +73,7 @@ class TriggerGeneratorIO(nTimers: Int) extends Bundle {
   val terminate = Output(Bool())
 
   def driveDefaults() = {
-    triggers.driveDefaults()
+    triggers.foreach(_.driveDefaults())
     execute.valid := false.B
     execute.bits.driveDefaults()
     terminate := false.B
@@ -158,16 +151,16 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
     // backpressure. This implies that we might be backpressured for a long enough time so that we lose events.
     is (sFiring) {
       scheduler.execute.ready := false.B
-      for (i <- 0 until io.triggers.timers.size) {
+      for (i <- 0 until nTimers) {
         when(!regTriggerFired(i)) {
-          when(io.triggers.timers(i).trigger.ready) {
+          when(io.triggers(i).ready) {
             when(EventMode.hasLocalEvent(regExecute.asUInt)) {
-              io.triggers.timers(i).trigger.req.valid := true.B
-              io.triggers.timers(i).trigger.req.present := eventQueue.io.triggerVec(i)
-              io.triggers.timers(i).trigger.req.token.tag := eventQueue.io.nextEventTag
-              io.triggers.timers(i).trigger.fire := true.B
+              io.triggers(i).req.valid := true.B
+              io.triggers(i).req.present := eventQueue.io.triggerVec(i)
+              io.triggers(i).req.token.tag := eventQueue.io.nextEventTag
+              io.triggers(i).fire := true.B
             }.elsewhen(EventMode.hasExternalEvent(regExecute.asUInt)) {
-              io.triggers.timers(i).trigger.writeAbsent()
+              io.triggers(i).writeAbsent()
             }
             regTriggerFired(i) := true.B
           }
