@@ -42,4 +42,7 @@ jobs:
       - name: Run Chisel tests;
         run: |
           ./gradlew core:integrationTest --tests org.lflang.tests.runtime.ChiselTest.run\*
+      - name: Run Codesign tests;
+        run: |
+          ./gradlew core:integrationTest --tests org.lflang.tests.runtime.CodesignTest.run\*
       
