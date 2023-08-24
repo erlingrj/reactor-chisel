@@ -21,7 +21,7 @@ object Schedule {
    * @param configs
    * @return
    */
-  def calculateHyperPeriod(configs: Seq[TimerConfig]): Time = {
+  def calculateHyperPeriod(configs: Seq[TimerTriggerConfig]): Time = {
     Time.nsec(
       configs
         .filterNot(_.period.ticks == 0)
@@ -31,15 +31,18 @@ object Schedule {
   }
 
   // Calculate the steps present in the schedule.
-  def calculateScheduleSteps(hyperPeriod: Time, configs: Seq[TimerConfig]): Seq[Time] = {
+  def calculateScheduleSteps(hyperPeriod: Time, configs: Seq[TriggerConfig]): Seq[Time] = {
     val steps = ArrayBuffer[Time]()
     for (c <- configs) {
-      if (!c.isShutdownTrigger) {
-        var time = c.offset
-        while (time == 0 || time < hyperPeriod) {
-          if (!steps.contains(time)) steps += time
-          if (c.period > 0) time += c.period else time = Time.FOREVER
-        }
+      c match {
+        case c: TimerTriggerConfig =>
+          var time = c.offset
+          while (time == 0 || time < hyperPeriod) {
+            if (!steps.contains(time)) steps += time
+            if (c.period > 0) time += c.period else time = Time.FOREVER
+          }
+        case _: StartupTriggerConfig => if (!steps.contains(Time.nsec(0))) steps += Time.nsec(0)
+        case _ =>
       }
     }
     steps.sorted.toSeq
@@ -57,8 +60,10 @@ object Schedule {
     }
   }
 
-  def createSchedules(configs: Seq[TimerConfig]): (Time, EventSchedule, EventSchedule, ScheduleElement)= {
-    val hyperPeriod = calculateHyperPeriod(configs)
+  def createSchedules(configs: Seq[TriggerConfig]): (Time, EventSchedule, EventSchedule, ScheduleElement)= {
+    val timers = configs.collect{ case t: TimerTriggerConfig => t}
+
+    val hyperPeriod = calculateHyperPeriod(timers)
     val periodicSchedule = ArrayBuffer[ScheduleElement]()
     val initialSchedule = ArrayBuffer[ScheduleElement]()
     val steps = calculateScheduleSteps(hyperPeriod, configs)
@@ -66,25 +71,28 @@ object Schedule {
 
     for (i <- steps) {
       // The periodic schedule is all timers with periods greater than zero
-      println(i.nsec - configs(0).offset.nsec)
-      println(configs(0).period.nsec)
-
-      val periodic = configs.map(c =>
-        c.period > 0 &&
-        !c.isShutdownTrigger &&
-        ((i.nsec - c.offset.nsec) % c.period.nsec == 0)
-      )
+      val periodic = configs.map {
+        case c: TimerTriggerConfig => c.period > 0 && (i.nsec - c.offset.nsec) % c.period.nsec == 0
+        case _ => false
+      }
 
       // Initial schedule is just all timers
-      val initial = configs.map(c =>
-        (i.nsec == c.offset.nsec) &&
-          !c.isShutdownTrigger
-      )
+      val initial = configs.map {
+        case c: TimerTriggerConfig => c.offset.nsec == i.nsec
+        case _: StartupTriggerConfig => i.nsec == 0
+        case _ => false
+      }
+
 
       periodicSchedule += ScheduleElement(i, periodic)
       initialSchedule += ScheduleElement(i, initial)
     }
-    val shutdownTriggers = configs.map(_.isShutdownTrigger)
+
+    val shutdownTriggers = configs.map {
+      case c: ShutdownTriggerConfig => true
+      case _ => false
+    }
+
     val shutdown = ScheduleElement(Time.FOREVER, shutdownTriggers)
 
     (hyperPeriod, initialSchedule.toSeq, periodicSchedule.toSeq, shutdown)

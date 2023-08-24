@@ -41,8 +41,6 @@ class SwArrayToken[T <: Data](gen: T) extends SwToken(gen) {
   val size = UInt(32.W)
 }
 
-
-
 class EventReadReq[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bundle {
   def driveDefaults() = {}
 }
@@ -88,7 +86,6 @@ class EventReadResp[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bun
   }
 }
 
-
 class EventReader[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bundle {
   def genData = gen1
   def genToken = gen2
@@ -110,7 +107,6 @@ abstract class EventReadMaster[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) 
   def read: T1
   def read(addr: UInt): T1
   def read(addr: Int): T1
-
 }
 
 class EventArrayReadMaster[T1 <: Data](gen1: T1, gen2: ArrayToken[T1]) extends EventReadMaster(gen1, gen2) {
@@ -149,6 +145,7 @@ class EventSingleValueReadMaster[T1 <: Data](gen1: T1) extends EventReadMaster(g
     0.U.asTypeOf(gen1)
   }
 }
+
 class EventPureReadMaster extends EventReadMaster(UInt(0.W), new PureToken) {
   val req = Output(new EventReadReq(UInt(0.W), new PureToken))
   val resp = Input(new EventReadResp(UInt(0.W), new PureToken))

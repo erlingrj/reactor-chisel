@@ -61,8 +61,8 @@ abstract class Reactor extends Module {
   var outPorts: ArrayBuffer[OutputPort[_ <: Data, _ <: Token[_<: Data]]] = new ArrayBuffer()
   var connections: ArrayBuffer[Connection[_ <: Data,_ <: Token[_<: Data]]] = new ArrayBuffer()
   var childReactors: ArrayBuffer[Reactor] = new ArrayBuffer
-  var localTriggers: ArrayBuffer[TimerTriggerVirtual] = new ArrayBuffer()
-  var containedTriggers: ArrayBuffer[TimerTriggerVirtual] = new ArrayBuffer()
+  var localTriggers: ArrayBuffer[TriggerPureVirtual] = new ArrayBuffer()
+  var containedTriggers: ArrayBuffer[TriggerPureVirtual] = new ArrayBuffer()
   var states: ArrayBuffer[State[_ <: Data, _ <: Token[_ <: Data]]] = new ArrayBuffer()
   var unconnectedChildInPorts: ArrayBuffer[UnconnectedInputPort[_ <: Data, _ <: Token[_ <: Data]]] = new ArrayBuffer()
 
@@ -87,7 +87,7 @@ abstract class Reactor extends Module {
     })
   }
 
-  def allTriggerConfigs(): ArrayBuffer[TimerTriggerVirtual] = localTriggers ++ containedTriggers
+  def allTriggerConfigs(): ArrayBuffer[TriggerPureVirtual] = localTriggers ++ containedTriggers
 
   def connectTimersAndCreateIO(): ReactorTriggerIO = {
     // Create the seq of contained virtual timers. Also create the Seq of TimerIO which matches the containedTimers.
