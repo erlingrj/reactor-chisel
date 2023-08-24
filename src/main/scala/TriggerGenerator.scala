@@ -82,7 +82,7 @@ class TriggerGeneratorIO(nTimers: Int) extends Bundle {
 }
 
 class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor) extends Module {
-  val nTimers = mainReactor.triggerIO.allTriggers.size
+  val nTimers = mainReactor.triggerIO.allTimerTriggers.size
   val io = IO(new TriggerGeneratorIO(nTimers))
   io.driveDefaults()
 

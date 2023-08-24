@@ -37,11 +37,28 @@ abstract class ReactorExternalIO(children: ArrayBuffer[Reactor]) extends Bundle 
   val childrenIO = MixedVec(Seq.tabulate(children.length)(i => children(i).externalIO.cloneType))
 }
 
-class ReactorTriggerIO(nLocalTriggers: Int, nContainedTriggers: Int) extends Bundle {
-  val localTriggers = Vec(nLocalTriggers, new EventPureWriteSlave)
-  val containedTriggers = Vec(nContainedTriggers, new EventPureWriteSlave)
 
-  def allTriggers = localTriggers ++ containedTriggers
+case class NumTriggers(local: Int, contained: Int)
+
+case class ReactorTriggerConfig(
+    timers: NumTriggers,
+  physicalActionsPure: NumTriggers,
+  physicalActionsSingleValue: NumTriggers
+)
+
+class ReactorTriggerIO(cfg: ReactorTriggerConfig) extends Bundle {
+  val localTimerTriggers = Vec(cfg.timers.local, new EventPureWriteSlave)
+  val containedTimerTriggers = Vec(cfg.timers.contained, new EventPureWriteSlave)
+
+  val localPhysicalActionPureTriggers = Vec(cfg.physicalActionsPure.local, new EventPureWriteSlave)
+  val containedPhysicalActionPureTriggers = Vec(cfg.physicalActionsPure.contained, new EventPureWriteSlave)
+
+  val localPhysicalActionSingleValueTriggers = Vec(cfg.physicalActionsSingleValue.local, new EventPureWriteSlave)
+  val containedPhysicalActionSingleValueTriggers = Vec(cfg.physicalActionsSingleValue.contained, new EventPureWriteSlave)
+
+  def allTimerTriggers = localTimerTriggers ++ containedTimerTriggers
+  def allPhysicalActionPureTriggers = localPhysicalActionPureTriggers ++ containedPhysicalActionPureTriggers
+  def allPhysicalActionSingleValueTriggers = localPhysicalActionSingleValueTriggers ++ containedPhysicalActionSingleValueTriggers
 }
 
 abstract class Reactor extends Module {
@@ -94,7 +111,7 @@ abstract class Reactor extends Module {
     // It is important they they match. Because the top-level Reactor will use containedTimers to find the
     // needed timer configs (offset and period).
     containedTriggers = (for (child <- childReactors) yield child.localTriggers ++ child.containedTriggers).flatten
-    val containedTimersIO = (for (child <- childReactors) yield child.triggerIO.localTriggers ++ child.triggerIO.containedTriggers).flatten
+    val containedTimersIO = (for (child <- childReactors) yield child.triggerIO.localTimerTriggers ++ child.triggerIO.containedTimerTriggers).flatten
 
     println(s"Reactor ${this.name} has ${localTriggers.size} local timers ${containedTriggers.size} contained timers.")
 
@@ -103,14 +120,14 @@ abstract class Reactor extends Module {
 
     // Connect local timers and construct the connections
     for ((timer, i) <- localTriggers.zipWithIndex) {
-      timer.declareInputPort(timerIO.localTriggers(i))
+      timer.declareInputPort(timerIO.localTimerTriggers(i))
       timer.construct().foreach(inp => inPorts += inp) // Construct the inputPorts for the timer triggers and add them
     }
 
 
     // Forward the timerIO to the contained timers
     for ((containedTimerIO, i) <- containedTimersIO.zipWithIndex) {
-      containedTimerIO <> timerIO.containedTriggers(i)
+      containedTimerIO <> timerIO.containedTimerTriggers(i)
     }
 
     // Return the newly created ReactorTimerIO.
@@ -123,8 +140,8 @@ abstract class Reactor extends Module {
     for (port <- unconnectedChildInPorts) {
       port.io.writeAbsent := false.B
       // If we have any triggers, use a trigger to know when to write absent tokens into the unconnected ports.
-      if (triggerIO.allTriggers.nonEmpty) {
-        val trig = triggerIO.allTriggers.head
+      if (triggerIO.allTimerTriggers.nonEmpty) {
+        val trig = triggerIO.allTimerTriggers.head
         when(trig.fire) {
           port.io.writeAbsent := true.B
         }

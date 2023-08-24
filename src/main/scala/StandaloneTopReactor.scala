@@ -14,8 +14,8 @@ class StandaloneTopReactor(mainReactorGenFunc: () => Reactor)(implicit globalCfg
   val trigGen = Module(new TriggerGenerator(true, globalCfg.timeout, mainReactor))
 
   // Connect the triggerGenerator to the mainReactor
-  for (i <- mainReactor.triggerIO.allTriggers.indices) {
-    mainReactor.triggerIO.allTriggers(i) <> trigGen.io.triggers(i)
+  for (i <- mainReactor.triggerIO.allTimerTriggers.indices) {
+    mainReactor.triggerIO.allTimerTriggers(i) <> trigGen.io.triggers(i)
   }
 
   trigGen.io.inputPresent := false.B

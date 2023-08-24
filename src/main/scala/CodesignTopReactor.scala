@@ -129,8 +129,8 @@ class CodesignTopReactor(mainReactorGen: () => Reactor, swIOGen: () => SwIO)
   io.coordination.logicalTagComplete := swPorts.io.logicalTagComplete
 
   // Connect the triggerGenerator to the mainReactor
-  for (i <- mainReactor.triggerIO.allTriggers.indices) {
-    mainReactor.triggerIO.allTriggers(i) <> triggerGen.io.triggers(i)
+  for (i <- mainReactor.triggerIO.allTimerTriggers.indices) {
+    mainReactor.triggerIO.allTimerTriggers(i) <> triggerGen.io.triggers(i)
   }
 
   // Terminate when triggerGenerator has fired the shutdown trigger AND all reactors are idle
