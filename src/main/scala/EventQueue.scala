@@ -326,3 +326,46 @@ class PhysicalActionEventQueue(nPhysicalActions: Int, nTimers: Int) extends Modu
 
   }
 }
+class PhysicalActionConnectorIO(mainIO: ReactorPhysicalIO, extIO: ReactorPhysicalFlippedIO) extends Bundle {
+  val main = mainIO
+  val ext = extIO
+  val triggers = Vec(ext.getAllPorts.size, new EventPureWriteMaster)
+  val schedules = Vec(ext.getAllPorts.size, new EventPureWriteSlave)
+}
+
+
+object PhysicalActionConnector {
+  def apply(mainIO: ReactorPhysicalIO, extIO: ReactorPhysicalFlippedIO, triggerGenIO: TriggerGeneratorIO): Unit = {
+    for (((main, ext), idx) <- (mainIO.getAllPorts zip extIO.getAllPorts).zipWithIndex) {
+      val (connFactory, mainIO, extIO) = (main, ext) match {
+        case (m: EventPureReadMaster, e: EventPureWriteSlave) =>
+          val c = new PureConnectionFactory
+          c << e
+          c >> m
+          (c, m, e)
+        case (m: EventSingleValueReadMaster[Data], e: EventSingleValueWriteSlave[Data]) =>
+          val c = new SingleValueConnectionFactory(e.genData)
+          c << e
+          c >> m
+          (c, m, e)
+        case (m: EventArrayReadMaster[Data], e: EventArrayWriteSlave[Data]) =>
+          val c = new ArrayConnectionFactory(e.genData, e.genToken)
+          c << e
+          c >> m
+          (c, m, e)
+      }
+      val conn = connFactory.construct()
+      val trigGenTrigger = triggerGenIO.phyTriggers(idx)
+      val trigGenSched = triggerGenIO.phySchedules(idx)
+      // Let the TriggerGenerator control when this connection fires and the tag it will be associated with
+      conn.head.io.write.fire := trigGenTrigger.fire
+      conn.head.io.write.req.token.asInstanceOf[Token[UInt]].tag := trigGenTrigger.req.token.tag // FIXME: Hacky way of overriding the tag signal so that the TriggerGenerator decides the tag of any Physical Action event
+
+      trigGenTrigger.ready := conn.head.io.write.ready
+
+      // Connect the fire signal from the top-level IO port to the TriggerGenerator
+      trigGenSched.fire := extIO.fire
+      trigGenSched.req.driveDefaults() // We only need the fire signal.
+    }
+  }
+}

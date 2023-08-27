@@ -14,38 +14,8 @@ class StandaloneTopReactor(mainReactorGenFunc: () => Reactor)(implicit globalCfg
 
   val trigGen = Module(new TriggerGenerator(true, globalCfg.timeout, mainReactor))
 
-  for (((main, ext), idx) <- (mainReactor.physicalIO.getAllPorts zip physicalIO.getAllPorts).zipWithIndex){
-    val (connFactory, mainIO, extIO) = (main, ext) match {
-      case (m: EventPureReadMaster, e: EventPureWriteSlave) =>
-        val c = new PureConnectionFactory
-        c << e
-        c >> m
-        (c,m,e)
-      case (m: EventSingleValueReadMaster[Data], e: EventSingleValueWriteSlave[Data]) =>
-        val c = new SingleValueConnectionFactory(e.genData)
-        c << e
-        c >> m
-        (c,m,e)
-      case (m: EventArrayReadMaster[Data], e: EventArrayWriteSlave[Data]) =>
-        val c = new ArrayConnectionFactory(e.genData, e.genToken)
-        c << e
-        c >> m
-        (c,m,e)
-    }
-    val conn = connFactory.construct()
-    val trigGenTrigger = trigGen.io.phyTriggers(idx)
-    val trigGenSched = trigGen.io.phySchedules(idx)
-    // Let the TriggerGenerator control when this connection fires and the tag it will be associated with
-    conn.head.io.write.fire := trigGenTrigger.fire
-    conn.head.io.write.req.token.asInstanceOf[Token[UInt]].tag := trigGenTrigger.req.token.tag // FIXME: Hacky way of overriding the tag signal so that the TriggerGenerator decides the tag of any Physical Action event
-
-    trigGenTrigger.ready := conn.head.io.write.ready
-
-    // Connect the fire signal from the top-level IO port to the TriggerGenerator
-    trigGenSched.fire := extIO.fire
-    trigGenSched.req.driveDefaults() // We only need the fire signal.
-  }
-
+  // Connect external physical IO, TriggerGenerator and physical IO on the main Reactor
+  PhysicalActionConnector(mainReactor.physicalIO, physicalIO, trigGen.io)
 
   // Connect the triggerGenerator to the mainReactor
   for (i <- mainReactor.triggerIO.allTimerTriggers.indices) {

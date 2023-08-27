@@ -115,13 +115,18 @@ class CodesignTopReactor(mainReactorGen: () => Reactor, swIOGen: () => SwIO)
   val externalIO = IO(mainReactor.externalIO.cloneType)
   externalIO <> mainReactor.externalIO
 
+  val triggerGen = Module(new TriggerGenerator(false, globalCfg.timeout, mainReactor))
+  val physicalIO = IO(new ReactorPhysicalFlippedIO(mainReactor.physicalIO.cloneType))
+
+  // Connect external physical IO, TriggerGenerator and physical IO on the main Reactor
+  PhysicalActionConnector(mainReactor.physicalIO, physicalIO, triggerGen.io)
+
   // Create the module handling the tokens from SW to mainReactor
   val swPorts = Module(new TopLevelPorts(io.ports.cloneType, mainReactor.io.cloneType))
   swPorts.io.sw <> io.ports
   swPorts.io.mainReactor <> mainReactor.io
   swPorts.io.swCmd := cmd.cmdOut
 
-  val triggerGen = Module(new TriggerGenerator(false, globalCfg.timeout, mainReactor))
   triggerGen.io.inputPresent := swPorts.io.inputPresent
   io.coordination.nextEventTag := triggerGen.io.nextEventTag
   triggerGen.io.tagAdvanceGrant := io.coordination.tagAdvanceGrant
