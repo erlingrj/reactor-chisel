@@ -1,6 +1,6 @@
 package reactor
 
-import chisel3._
+import chisel3.{UInt, _}
 import chisel3.util._
 import chisel3.experimental.DataMirror.directionOf
 
@@ -26,9 +26,10 @@ class TimerCoordinationIO extends Bundle {
 // them trigger reactions. These timers are translated into TimerVirtual in reactor-chisel. There will only be a single
 // actual hardware timer which contains the counters a token-generation logic for all the other timers.
 
-abstract class TriggerPureVirtual(val cfg: TriggerConfig) extends CircuitFactory {
+class TriggerPureVirtual(val cfg: TriggerConfig) {
+
   var triggeredReactions: ArrayBuffer[EventPureReadMaster] = ArrayBuffer()
-  var inputTimerPort: EventWriteSlave[UInt, PureToken] = null;
+  var inputTimerPort: EventPureWriteSlave = null;
 
   // Declare that this virtual timer triggers reaction `r`
   def declareTriggeredReaction(r: EventPureReadMaster): Unit = {
@@ -37,13 +38,13 @@ abstract class TriggerPureVirtual(val cfg: TriggerConfig) extends CircuitFactory
 
   // Declare that this virtual timer is driven by the timer input port `in`. This port
   // is eventually connected to the top-level timer module
-  def declareInputPort(in: EventWriteSlave[UInt, PureToken]): Unit = {
+  def declareInputPort(in: EventPureWriteSlave): Unit = {
     inputTimerPort = in
   }
 
   // This functions can be called after triggered reactions and the input-port is declared.
   // It will create a pure connection between the input port and the triggered reactions
-  override def construct(): Seq[InputPort[UInt, PureToken]] = {
+  def construct(): Seq[InputPort[UInt, PureToken]] = {
     val conn = new PureConnectionFactory()
     val in = Module(new InputPortPure(InputPortConfig(0.U, new PureToken, triggeredReactions.length)))
 
@@ -55,7 +56,6 @@ abstract class TriggerPureVirtual(val cfg: TriggerConfig) extends CircuitFactory
     }
     Seq(in)
   }
-
 }
 
 class TimerTriggerVirtual(cfg: TimerTriggerConfig) extends TriggerPureVirtual(cfg) {}

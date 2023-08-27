@@ -37,28 +37,61 @@ abstract class ReactorExternalIO(children: ArrayBuffer[Reactor]) extends Bundle 
   val childrenIO = MixedVec(Seq.tabulate(children.length)(i => children(i).externalIO.cloneType))
 }
 
+abstract class ReactorPhysicalIO(children: ArrayBuffer[Reactor]) extends Bundle {
+  val childrenIO = MixedVec(Seq.tabulate(children.length)(i => children(i).physicalIO.cloneType))
+
+  private def flatten(data: Data): Seq[Data] = {
+    data match {
+      case d: MixedVec[_] =>
+        d.flatMap(flatten).toSeq
+      case d: ReactorPhysicalIO => d.getElements.flatMap(flatten).toSeq
+      case d: Data => Seq(d)
+      case _ =>
+        require(false, s"Got ${data}")
+        Seq(UInt())
+    }
+  }
+
+  def getAllPorts: ArrayBuffer[Data] = {
+    val elts = getElements
+    val flattend: ArrayBuffer[Data] = ArrayBuffer()
+    for (elem <- elts) {
+      flatten(elem).foreach(flattend += _)
+    }
+    flattend
+  }
+
+}
+
+class ReactorPhysicalFlippedIO(org: ReactorPhysicalIO) extends Bundle {
+
+  println(org.getAllPorts)
+
+  val ports: MixedVec[EventWriteSlave[_ <: Data, _ <: Token[_<:Data]]] = MixedVec(Seq.tabulate(org.getAllPorts.size)( i =>
+    org.getAllPorts(i) match {
+      case p: EventPureReadMaster => new EventPureWriteSlave
+      case p: EventSingleValueReadMaster[_] => new EventSingleValueWriteSlave(p.genData)
+      case p: EventArrayReadMaster[_] => new EventArrayWriteSlave(p.genData, p.genToken)
+      case _ =>
+        require(false, s"ReactorPhysicalIO had a port of unrecognized type: ${org.getAllPorts(i)}")
+        new EventPureWriteSlave
+    }))
+
+  def getAllPorts: Seq[Data] = this.getElements.head.asInstanceOf[MixedVec[Data]].toSeq
+}
+
 
 case class NumTriggers(local: Int, contained: Int)
 
 case class ReactorTriggerConfig(
     timers: NumTriggers,
-  physicalActionsPure: NumTriggers,
-  physicalActionsSingleValue: NumTriggers
 )
 
 class ReactorTriggerIO(cfg: ReactorTriggerConfig) extends Bundle {
   val localTimerTriggers = Vec(cfg.timers.local, new EventPureWriteSlave)
   val containedTimerTriggers = Vec(cfg.timers.contained, new EventPureWriteSlave)
 
-  val localPhysicalActionPureTriggers = Vec(cfg.physicalActionsPure.local, new EventPureWriteSlave)
-  val containedPhysicalActionPureTriggers = Vec(cfg.physicalActionsPure.contained, new EventPureWriteSlave)
-
-  val localPhysicalActionSingleValueTriggers = Vec(cfg.physicalActionsSingleValue.local, new EventPureWriteSlave)
-  val containedPhysicalActionSingleValueTriggers = Vec(cfg.physicalActionsSingleValue.contained, new EventPureWriteSlave)
-
   def allTimerTriggers = localTimerTriggers ++ containedTimerTriggers
-  def allPhysicalActionPureTriggers = localPhysicalActionPureTriggers ++ containedPhysicalActionPureTriggers
-  def allPhysicalActionSingleValueTriggers = localPhysicalActionSingleValueTriggers ++ containedPhysicalActionSingleValueTriggers
 }
 
 abstract class Reactor extends Module {
@@ -67,8 +100,11 @@ abstract class Reactor extends Module {
   val io: ReactorIO
   // The trigger (Timers) inputs to the reactor. All Timer triggers are generated in the same external module
   val triggerIO: ReactorTriggerIO
-  // The external (input/output with @physical attribute) ports which can be read and written from reactions.
+  // The external (input/output with @external attribute) ports which can be read and written from reactions.
   val externalIO: ReactorExternalIO
+
+  // The physical io are inputs arising from physical actions
+  val physicalIO: ReactorPhysicalIO
 
   val statusIO = IO(new ReactorStatusIO)
 
@@ -83,6 +119,9 @@ abstract class Reactor extends Module {
   var states: ArrayBuffer[State[_ <: Data, _ <: Token[_ <: Data]]] = new ArrayBuffer()
   var unconnectedChildInPorts: ArrayBuffer[UnconnectedInputPort[_ <: Data, _ <: Token[_ <: Data]]] = new ArrayBuffer()
 
+  // To fetch the Physical Action triggers, we simply create a Pure Virtual Trigger for each IO in the physicalIO bundle.
+  def phyTriggers = physicalIO.getAllPorts.map(_ => new PhysicalActionTriggerPureVirtual(offset = Time.nsec(0)))
+
   // Is the current Reactor (and any contained reactor idle?)
   def isIdle(): Bool = {
     ( childReactors.map(_.statusIO.idle) ++
@@ -94,6 +133,7 @@ abstract class Reactor extends Module {
     statusIO.idle := isIdle()
     assert(util.PopCount(reactions.map(_.statusIO.state === Reaction.sRunning)) <= 1.U, "[Reactor.scala] Mutual exclusion between reactions not preserved")
     connectExternalIOInternally()
+    connectPhysicalIOInternally()
     driveUnconnectedPorts()
     fixNaming()
   }
@@ -104,7 +144,7 @@ abstract class Reactor extends Module {
     })
   }
 
-  def allTriggerConfigs(): ArrayBuffer[TriggerPureVirtual] = localTriggers ++ containedTriggers
+  def allTriggerConfigs(): ArrayBuffer[TriggerPureVirtual] = localTriggers ++ containedTriggers ++ phyTriggers
 
   def connectTimersAndCreateIO(): ReactorTriggerIO = {
     // Create the seq of contained virtual timers. Also create the Seq of TimerIO which matches the containedTimers.
@@ -116,7 +156,11 @@ abstract class Reactor extends Module {
     println(s"Reactor ${this.name} has ${localTriggers.size} local timers ${containedTriggers.size} contained timers.")
 
     // Create the timerIO
-    val timerIO = IO(new ReactorTriggerIO(localTriggers.size, containedTriggers.size))
+    val timerIO = IO(new ReactorTriggerIO(
+      ReactorTriggerConfig(
+        timers = NumTriggers(localTriggers.size, containedTriggers.size),
+      )
+    ))
 
     // Connect local timers and construct the connections
     for ((timer, i) <- localTriggers.zipWithIndex) {
@@ -166,6 +210,12 @@ abstract class Reactor extends Module {
   def connectExternalIOInternally(): Unit = {
     for ((extIO, child) <- externalIO.childrenIO zip childReactors) {
       extIO <> child.externalIO
+    }
+  }
+
+  def connectPhysicalIOInternally(): Unit ={
+    for ((phyIO, child) <- physicalIO.childrenIO zip childReactors) {
+      phyIO <> child.physicalIO
     }
   }
 }

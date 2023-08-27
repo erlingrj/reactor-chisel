@@ -86,9 +86,14 @@ class EventReadResp[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bun
   }
 }
 
-class EventReader[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bundle {
+
+abstract class EventInterface[T1,T2] extends Bundle {
+}
+
+abstract class EventReader[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends EventInterface[T1,T2] {
   def genData = gen1
   def genToken = gen2
+
 }
 
 abstract class EventReadMaster[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends EventReader(gen1, gen2) {
@@ -189,7 +194,7 @@ class EventArrayReadSlave[T1 <: Data](gen1: T1, gen2: ArrayToken[T1]) extends Ev
   val resp = Output(new EventReadResp(gen1, gen2))
 }
 
-class EventWriter[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2:T2) extends Bundle {
+class EventWriter[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2:T2) extends EventInterface[T1, T2] {
   def genData = gen1
   def genToken = gen2
 }

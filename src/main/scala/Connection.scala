@@ -210,6 +210,8 @@ class ConnectionFactory[T1 <: Data, T2 <: Token[T1], T3 <: Connection[T1, T2]](
       nChans  = downstreams.map(_.length).sum
     )
     val conn = Module(genFunc(config))
+
+    println(upstream)
     conn.io.write <> upstream
     var idx = 0
     for (i <- 0 until downstreams.length) {
@@ -235,7 +237,7 @@ class PureConnectionFactory() extends ConnectionFactory(
   genFunc = {(c: ConnectionConfig[UInt, PureToken]) => new PureConnection(c)}
 ) {}
 
-class ArrayConnectionFactory[T1 <: Data](genData: T1, genToken: ArrayToken[T1]) extends ConnectionFactory(
+class ArrayConnectionFactory[T1 <: Data](genData: T1, genToken: ArrayToken[T1]) extends ConnectionFactory[T1, ArrayToken[T1], ArrayConnection[T1]](
   genData,genToken,
   genFunc = (c: ConnectionConfig[T1, ArrayToken[T1]]) => new ArrayConnection(c)
 ) {}

@@ -121,7 +121,7 @@ case class EventQueueParams(
   def scheduleWidth = nLocalTriggers
   def scheduleWidthBits = Math.max(log2Ceil(scheduleWidth), 1)
 
-  require(nLocalTriggers == shutdownTriggers.triggers.size)
+  require(nLocalTriggers == shutdownTriggers.triggers.size, "[EventQueue] Mismatch between nLocalTriggers and the widths of the schedules")
 }
 
 class EventQueueIO(p: EventQueueParams) extends Bundle {
@@ -129,6 +129,7 @@ class EventQueueIO(p: EventQueueParams) extends Bundle {
   val triggerVec = Vec(p.scheduleWidth, Output(Bool()))
   val step = Input(Bool())
   val terminate = Output(Bool())
+
 
   def driveDefaultsFlipped(): Unit = {
     step := false.B
@@ -278,5 +279,50 @@ class EventQueueCodesign(p: EventQueueParams) extends EventQueue(p) {
   when(regDone) {
     io.terminate := true.B
     io.nextEventTag := Tag.FOREVER
+  }
+}
+
+class PhysicalActionEventQueueIO(nPhysicalActions: Int, nTimers: Int) extends Bundle {
+  val phySchedules = Vec(nPhysicalActions, new EventPureWriteSlave)
+  val nextEventTag = Decoupled(Tag())
+  val triggerVec = Output(Vec(nTimers+nPhysicalActions, Bool()))
+
+  def driveDefaults()= {
+    triggerVec.foreach(_ := false.B)
+    nextEventTag.valid := false.B
+    nextEventTag.bits := 0.U
+  }
+}
+
+class PhysicalActionEventQueue(nPhysicalActions: Int, nTimers: Int) extends Module {
+  val io = IO(new PhysicalActionEventQueueIO(nPhysicalActions, nTimers))
+  io.driveDefaults()
+
+  if(nPhysicalActions > 0) {
+    val regNET = RegInit(0.U.asTypeOf(Tag()))
+    val regValids = RegInit(VecInit(Seq.fill(nPhysicalActions)(false.B)))
+
+    def isBusy = regValids.asUInt.orR
+
+    io.nextEventTag.valid := isBusy
+    io.nextEventTag.bits := regNET
+
+    // TriggerVec is prepended with the timer triggers which are all absent. (0.U(ntimers.W))
+    for (i <- 0 until nPhysicalActions) {
+      io.triggerVec(i + nTimers) := regValids(i)
+    }
+
+    // Current limitation. Only one outstanding physical action
+    for ((phy, idx) <- io.phySchedules.zipWithIndex) {
+      phy.ready := !isBusy
+      when(phy.fire) {
+        regValids(idx) := true.B
+        regNET := phy.req.token.tag
+      }
+    }
+    when(io.nextEventTag.fire) {
+      regValids.foreach(_ := false.B)
+    }
+
   }
 }
