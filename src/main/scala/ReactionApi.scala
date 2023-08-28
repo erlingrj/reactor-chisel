@@ -1,30 +1,25 @@
 package reactor
 
 import chisel3._
+import chisel3.util.DecoupledIO
 
 object ReactionApi {
 
   /**
    * Write data to a normal output port
+   *
    * @param port
    * @param data
    * @param reaction
    * @tparam T1
    * @tparam T2
    */
-  def lf_set[T1 <: Data, T2 <: Token[T1]](port: EventWriteMaster[T1, T2], data: T1)(implicit reaction: Reaction): Unit = {
+  def lf_set[T1 <: Data, T2 <: Token[T1]](port: TokenWriteMaster[T1, T2], data: T1)(implicit reaction: Reaction): DecoupledIO[TokenWrDat[T1]] = {
     port.write(data)
-    port.req.token.tag := reaction.logicalTag
   }
 
-  def lf_set[T1 <: Data, T2 <: Token[T1]](port: EventWriteMaster[T1, T2], addr: Int, data: T1)(implicit reaction: Reaction): Unit = {
-    port.write(data, addr)
-    port.req.token.tag := reaction.logicalTag
-  }
-
-  def lf_set[T1 <: Data, T2 <: Token[T1]](port: EventWriteMaster[T1, T2], addr: UInt, data: T1)(implicit reaction: Reaction): Unit = {
-    port.write(data, addr)
-    port.req.token.tag := reaction.logicalTag
+  def lf_set[T1 <: Data, T2 <: Token[T1]](port: TokenWriteMaster[T1, T2], addr: UInt, size: UInt, data: T1)(implicit reaction: Reaction): DecoupledIO[TokenWrDat[T1]] = {
+    port.write(addr, size)
   }
 
   /**
@@ -37,27 +32,26 @@ object ReactionApi {
   def lf_set[T <: Data](port: StateReadWriteMaster[T, SingleToken[T]], data: T)(implicit reaction: Reaction): Unit = {
     port.write.write(data)
   }
-  def lf_present[T1 <: Data, T2 <: Token[T1]](port: EventReadMaster[T1,T2]): Bool= {
-    port.resp.present
+
+
+  def lf_present[T1 <: Data, T2 <: Token[T1]](port: TokenReadMaster[T1,T2]): Bool= {
+    port.present
   }
 
   /**
    * Get data from a normal input port
+   *
    * @param port
    * @tparam T1
    * @tparam T2
    * @return
    */
-  def lf_get[T1 <: Data, T2 <: Token[T1]](port: EventReadMaster[T1, T2]): T1 = {
+  def lf_get[T1 <: Data, T2 <: Token[T1]](port: TokenReadMaster[T1, T2]): DecoupledIO[TokenRdResp[T1]] = {
     port.read
   }
 
-  def lf_get[T1 <: Data, T2 <: Token[T1]](port: EventReadMaster[T1, T2], addr: Int): T1 = {
-    port.read(addr)
-  }
-
-  def lf_get[T1 <: Data, T2 <: Token[T1]](port: EventReadMaster[T1, T2], addr: UInt): T1 = {
-    port.read(addr)
+  def lf_get[T1 <: Data, T2 <: Token[T1]](port: TokenReadMaster[T1, T2], addr: UInt, size: UInt): DecoupledIO[TokenRdResp[T1]] = {
+    port.read(addr, size)
   }
 
   /**

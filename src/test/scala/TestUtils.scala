@@ -9,14 +9,16 @@ import reactor._
 object ReactorSim {
   val Monitor2 = Region
 
-  def readSlave[T <: Data](c: EventReadMaster[T, SingleToken[T]], data: T, expFire: Boolean=true, present: Boolean = true)(implicit clk: Clock): Unit = {
-    // FIXME: Should also accept Vec of EventReadMaster, if driving top-level input of Reactor, then we wanna drive all inputs together, maybe
+  def readSlave[T <: Data](c: TokenReadMaster[T, SingleToken[T]], data: T, expFire: Boolean=true, present: Boolean = true)(implicit clk: Clock): Unit = {
+    // FIXME: Should also accept Vec of TokenReadMaster, if driving top-level input of Reactor, then we wanna drive all inputs together, maybe
 //    require(expFire)
 
     timescope {
       c.resp.valid.poke(true.B)
-      c.resp.present.poke(present.B)
-      c.resp.token.data.poke(data)
+      c.token.poke(true.B)
+      c.present.poke(present.B)
+      c.resp.bits.data.poke(data)
+
       clk.step()
       if (expFire) {
         fork.withRegion(Monitor) {
@@ -28,7 +30,7 @@ object ReactorSim {
     }
   }
 
-  def readMaster[T <: Data](c: EventReadSlave[T, SingleToken[T]], expData: T, fire: Boolean=true, present: Boolean = true, now: Boolean = false)(implicit clk: Clock): Unit = {
+  def readMaster[T <: Data](c: TokenReadSlave[T, SingleToken[T]], expData: T, fire: Boolean=true, present: Boolean = true, now: Boolean = false)(implicit clk: Clock): Unit = {
     timescope {
         fork.withRegion(Monitor) {
           if (now) {
@@ -38,8 +40,9 @@ object ReactorSim {
               clk.step()
             }
           }
-            c.resp.present.expect(present.B)
-            c.resp.token.data.expect(expData)
+          c.token.expect(true.B)
+          c.present.expect(present.B)
+          c.resp.bits.data.expect(expData)
         }.joinAndStep(clk)
 
       c.fire.poke(fire.B)
@@ -47,17 +50,17 @@ object ReactorSim {
     }
   }
 
-  def writeMaster[T <: Data](c: EventWriteSlave[T, SingleToken[T]], data: T, present: Boolean = true, fire: Boolean=true)(implicit clk: Clock): Unit = {
+  def writeMaster[T <: Data](c: TokenWriteSlave[T, SingleToken[T]], data: T, present: Boolean = true, fire: Boolean=true)(implicit clk: Clock): Unit = {
     timescope {
       fork.withRegion(Monitor) {
-        while (!c.ready.peekBoolean()) {
+        while (!c.req.ready.peekBoolean()) {
           clk.step()
         }
       }.joinAndStep(clk)
 
       c.req.valid.poke(true.B)
-      c.req.present.poke(true.B)
-      c.req.token.data.poke(data)
+      c.dat.valid.poke(true.B)
+      c.dat.bits.data.poke(data)
       if (fire) {
         c.fire.poke(true.B)
       }
@@ -66,19 +69,19 @@ object ReactorSim {
   }
 
   // FIXME: We also want to receive a bunch of writes and only expect on the last one (essentially emulate a connection)
-  def writeSlave[T <: Data](c: EventWriteMaster[T, SingleToken[T]], expData: T, present: Boolean = true, fire: Boolean = true, now: Boolean = false)(implicit clk: Clock): Unit = {
+  def writeSlave[T <: Data](c: TokenWriteMaster[T, SingleToken[T]], expData: T, present: Boolean = true, fire: Boolean = true, now: Boolean = false)(implicit clk: Clock): Unit = {
     timescope {
-      c.ready.poke(true.B)
+      c.req.ready.poke(true.B)
+      c.dat.ready.poke(true.B)
       fork.withRegion(Monitor) {
         if (!now) {
-          while (!c.req.valid.peekBoolean()) {
+          while (!c.dat.valid.peekBoolean()) {
             clk.step()
           }
         }
 
-        c.req.valid.expect(true.B)
-        c.req.present.expect(present.B)
-        c.req.token.data.expect(expData)
+        c.dat.valid.expect(true.B)
+        c.dat.bits.data.expect(expData)
       }.joinAndStep(clk)
 
       if (fire) {

@@ -181,7 +181,7 @@ class TopLevelPorts(swPorts: SwIO, mainReactorPorts: ReactorIO) extends Module {
   // matching and connect them accordingly
   for ((sw, main) <- io.sw.getElements zip io.mainReactor.getElements) {
     (sw, main) match {
-      case (s: SwSingleToken[Data],m: Vec[EventSingleValueReadMaster[Data]])  => {
+      case (s: SwSingleToken[Data],m: Vec[SingleTokenReadMaster[Data]])  => {
         println(s"Got SingleToken input")
         // 1. We have an SingleToken Input port. Create the SwPort module and a connection object
         val swPort = Module(new TopLevelInputSingleToken(s.data.cloneType))
@@ -192,7 +192,7 @@ class TopLevelPorts(swPorts: SwIO, mainReactorPorts: ReactorIO) extends Module {
         swPort.io.swData := s.data // Only connect the data through here. The present signal is handled below
         inputPorts += swPort
       }
-      case (s: SwSingleToken[Data], m: EventSingleValueWriteMaster[Data]) => {
+      case (s: SwSingleToken[Data], m: SingleTokenWriteMaster[Data]) => {
         println(s"Got SingleToken Output")
         // 1. We have an SingleToken output port. Connect it and gather all output ports in an array
         // for dealing with the LTC and backpressure.
@@ -242,7 +242,7 @@ abstract class TopLevelInput extends Module {
 
 class TopLevelInputSingleTokenIO[T <: Data](genData: T) extends TopLevelInputIO {
   val swData = Input(genData)
-  val main = new EventSingleValueWriteMaster(genData)
+  val main = new SingleTokenWriteMaster(genData)
 
   def driveDefaults() = {
     main.driveDefaults()
@@ -254,17 +254,17 @@ class TopLevelInputSingleTokenIO[T <: Data](genData: T) extends TopLevelInputIO 
 class TopLevelInputSingleToken[T <: Data](genData: T) extends TopLevelInput {
   val io = IO(new TopLevelInputSingleTokenIO(genData))
   io.driveDefaults()
-  io.execute.ready := io.main.ready
+  io.execute.ready := io.main.req.ready && io.main.dat.ready
 
   when(io.execute.fire) {
     io.main.fire := true.B
     io.swPresent.ready := true.B
+    io.main.tag := io.execute.bits.tag
     assert(io.swPresent.fire)
     when (EventMode.hasExternalEvent(io.execute.bits.eventMode.asUInt)) {
-      io.main.req.valid := true.B
-      io.main.req.present := io.swPresent.bits
-      io.main.req.token.data := io.swData
-      io.main.req.token.tag := io.execute.bits.tag
+      io.main.req.valid := io.swPresent.bits
+      io.main.dat.valid := io.swPresent.bits
+      io.main.dat.bits := io.swData
     }.otherwise {
       io.main.writeAbsent()
     }
@@ -286,7 +286,7 @@ abstract class TopLevelOutput extends Module {
 
 class TopLevelOutputSingleTokenIO[T <: Data](genData: T) extends TopLevelOutputIO {
   val sw = Output(new SwSingleToken(genData))
-  val main = new EventSingleValueWriteSlave(genData)
+  val main = new SingleTokenWriteSlave(genData)
 
   def driveDefaults() = {
     main.driveDefaults()
@@ -303,11 +303,16 @@ class TopLevelOutputSingleToken[T <: Data](genData: T) extends TopLevelOutput {
   io.sw.data := regData
   io.sw.present := regPresent
 
-  io.main.ready := io.ready
+  io.main.req.ready := io.ready
+  io.main.dat.ready := io.ready
 
   when (io.main.req.valid) {
-    regData := io.main.req.token.data
-    regPresent := io.main.req.present
+    regPresent := true.B
+    assert(io.ready)
+  }
+
+  when(io.main.dat.valid) {
+    regData := io.main.dat.bits
     assert(io.ready)
   }
 

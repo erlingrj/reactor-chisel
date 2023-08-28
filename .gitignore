@@ -1,5 +1,7 @@
 ### Project Specific stuff
+.vscode/
 test_run_dir/*
+metals.
 ### XilinxISE template
 # intermediate build files
 *.bgn

@@ -62,8 +62,8 @@ class ExecuteIO extends Bundle {
 }
 
 class TriggerGeneratorIO(nTimers: Int, nPhys: Int) extends Bundle {
-  val timerTriggers = Vec(nTimers, new EventPureWriteMaster())
-  val phyTriggers = Vec(nPhys, new EventPureWriteMaster())
+  val timerTriggers = Vec(nTimers, new PureTokenWriteMaster())
+  val phyTriggers = Vec(nPhys, new PureTokenWriteMaster())
   val nextEventTag = Output(Tag())
   val tagAdvanceGrant = Input(Tag())
   val shutdownCommand = Input(new ShutdownCommand) // External request for termination at TAG
@@ -72,7 +72,7 @@ class TriggerGeneratorIO(nTimers: Int, nPhys: Int) extends Bundle {
 
   val inputPresent = Input(Bool())
   val terminate = Output(Bool())
-  val phySchedules = Vec(nPhys, new EventPureWriteSlave())
+  val phySchedules = Vec(nPhys, new PureTokenWriteSlave())
 
   def driveDefaults() = {
     timerTriggers.foreach(_.driveDefaults())
@@ -121,7 +121,7 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
   phyEventQueue.io.phySchedules zip io.phySchedules foreach {f => f._1 <> f._2}
 
   // Drive the tag signal here, from the clock. A physical action gets the current time as its tag.
-  phyEventQueue.io.phySchedules.foreach(_.req.token.tag := mainClock.now)
+  phyEventQueue.io.phySchedules.foreach(_.tag := mainClock.now)
   val eventQPick = eventQueue.io.nextEventTag < phyEventQueue.io.nextEventTag.bits || !phyEventQueue.io.nextEventTag.valid
   val nextEventTag = Mux(eventQPick, eventQueue.io.nextEventTag, phyEventQueue.io.nextEventTag.bits)
 
@@ -176,16 +176,15 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
       val triggers = io.timerTriggers ++ io.phyTriggers
       for ((t, i) <- triggers.zipWithIndex) {
         when(!regTriggerFired(i)) {
-          when(t.ready) {
+          when(t.req.ready) {
             when(EventMode.hasLocalEvent(regExecute.asUInt)) {
-              t.req.valid := true.B
               t.fire := true.B
               when (regWasPhysical) {
-                t.req.present := phyEventQueue.io.triggerVec(i)
-                t.req.token.tag := phyEventQueue.io.nextEventTag.bits
+                t.req.valid := phyEventQueue.io.triggerVec(i)
+                t.tag := phyEventQueue.io.nextEventTag.bits
               }.otherwise {
-                t.req.present := eventQueue.io.triggerVec(i)
-                t.req.token.tag := eventQueue.io.nextEventTag
+                t.req.valid := eventQueue.io.triggerVec(i)
+                t.tag := eventQueue.io.nextEventTag
               }
             }.elsewhen(EventMode.hasExternalEvent(regExecute.asUInt)) {
               t.writeAbsent()

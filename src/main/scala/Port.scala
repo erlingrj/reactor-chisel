@@ -19,14 +19,14 @@ case class InputPortConfig[T1 <: Data, T2 <: Token[T1]] (
 }
 
 // Concrete implementation to avoid type erasure problems: https://stackoverflow.com/questions/40237011/non-variable-type-argument
-trait InputPortSingleValueConfig[T1 <: Data] extends InputPortConfig[T1, SingleToken[T1]]
+trait InputPortSingleConfig[T1 <: Data] extends InputPortConfig[T1, SingleToken[T1]]
 trait InputPortArrayConfig[T1 <: Data] extends InputPortConfig[T1, ArrayToken[T1]]
 trait InputPortPureConfig extends InputPortConfig[UInt, PureToken]
 
 
 abstract class InputPortIO[T1 <: Data, T2 <: Token[T1]](c: InputPortConfig[T1,T2]) extends ReactorPortIO[T1,T2] {
-  val inward: Vec[EventReadSlave[T1,T2]]
-  val outward: EventReadMaster[T1,T2]
+  val inward: Vec[TokenReadSlave[T1,T2]]
+  val outward: TokenReadMaster[T1,T2]
 
   def driveDefaults(): Unit = {
     inward.foreach(_.driveDefaults())
@@ -35,21 +35,21 @@ abstract class InputPortIO[T1 <: Data, T2 <: Token[T1]](c: InputPortConfig[T1,T2
 
   def plugInwards(): Unit = {
     inward.foreach(i => {
-      i.fire := false.B
+      i.driveDefaultsFlipped()
     })
   }
 }
 class InputPortSingleValueIO[T1 <: Data](c: InputPortConfig[T1, SingleToken[T1]]) extends InputPortIO(c) {
-  val inward = Vec(c.nReaders, new EventSingleValueReadSlave(c.genData))
-  val outward = new EventSingleValueReadMaster(c.genData)
+  val inward = Vec(c.nReaders, new SingleTokenReadSlave(c.genData))
+  val outward = new SingleTokenReadMaster(c.genData)
 }
 class InputPortPureIO(c: InputPortConfig[UInt, PureToken]) extends InputPortIO(c) {
-  val inward = Vec(c.nReaders, new EventPureReadSlave)
-  val outward = new EventPureReadMaster
+  val inward = Vec(c.nReaders, new PureTokenReadSlave)
+  val outward = new PureTokenReadMaster
 }
 class InputPortArrayIO[T1 <: Data](c: InputPortConfig[T1, ArrayToken[T1]]) extends InputPortIO(c) {
-  val inward = Vec(c.nReaders, new EventArrayReadSlave(c.genData, c.genToken))
-  val outward = new EventArrayReadMaster(c.genData, c.genToken)
+  val inward = Vec(c.nReaders, new ArrayTokenReadSlave(c.genData, c.genToken))
+  val outward = new ArrayTokenReadMaster(c.genData, c.genToken)
 }
 
 abstract class InputPort[T1 <: Data, T2 <: Token[T1]](c: InputPortConfig[T1,T2]) extends Module {
@@ -75,7 +75,9 @@ abstract class InputPort[T1 <: Data, T2 <: Token[T1]](c: InputPortConfig[T1,T2])
 
       for (i <- 0 until c.nReaders) {
         io.inward(i).resp.valid := regTokens(i)
-        io.inward(i).resp.present := regTokens(i) && io.outward.resp.present
+        io.inward(i).token := regTokens(i) && io.outward.token
+        io.inward(i).present := regTokens(i) && io.outward.present
+
         when(io.inward(i).fire) {
           assert(regTokens(i), "[Port.scala] Reaction fired but port hadnt stored any tokens for it")
           regCount := regCount + 1.U
@@ -98,18 +100,18 @@ class InputPortSingleValue[T1 <: Data](c: InputPortConfig[T1, SingleToken[T1]]) 
   var downstreamIdx = 0
   var upstreamConnected = false
 
-  def >>(down: EventSingleValueReadMaster[T1]): Unit = {
+  def >>(down: SingleTokenReadMaster[T1]): Unit = {
     io.inward(downstreamIdx) <> down
     downstreamIdx += 1
   }
-  def >>(downs: Seq[EventSingleValueReadMaster[T1]]): Unit = downs.foreach(this >> _)
+  def >>(downs: Seq[SingleTokenReadMaster[T1]]): Unit = downs.foreach(this >> _)
 
-  def <<(up: EventSingleValueReadMaster[T1]): Unit = {
+  def <<(up: SingleTokenReadMaster[T1]): Unit = {
     require(!upstreamConnected, "[Port.scala] connectUpstream called twice on InputPort")
     io.outward <> up
     upstreamConnected = true
   }
-  def <<(up: Vec[EventSingleValueReadMaster[T1]]): Unit = this << up(0)
+  def <<(up: Vec[SingleTokenReadMaster[T1]]): Unit = this << up(0)
 }
 
 class InputPortArray[T1 <: Data](c: InputPortConfig[T1, ArrayToken[T1]]) extends InputPort(c) {
@@ -118,20 +120,20 @@ class InputPortArray[T1 <: Data](c: InputPortConfig[T1, ArrayToken[T1]]) extends
   var downstreamIdx = 0
   var upstreamConnected = false
 
-  def >>(down: EventArrayReadMaster[T1]): Unit = {
+  def >>(down: ArrayTokenReadMaster[T1]): Unit = {
     io.inward(downstreamIdx) <> down
     downstreamIdx += 1
   }
 
-  def >>(downs: Seq[EventArrayReadMaster[T1]]): Unit = downs.foreach(this >> _)
+  def >>(downs: Seq[ArrayTokenReadMaster[T1]]): Unit = downs.foreach(this >> _)
 
-  def <<(up: EventArrayReadMaster[T1]): Unit = {
+  def <<(up: ArrayTokenReadMaster[T1]): Unit = {
     require(!upstreamConnected, "[Port.scala] connectUpstream called twice on InputPort")
     io.outward <> up
     upstreamConnected = true
   }
 
-  def <<(up: Vec[EventArrayReadMaster[T1]]): Unit = this << up(0)
+  def <<(up: Vec[ArrayTokenReadMaster[T1]]): Unit = this << up(0)
 }
 class InputPortPure[T1 <: Data](c: InputPortConfig[UInt, PureToken]) extends InputPort(c) {
   val io = IO(new InputPortPureIO(c))
@@ -140,20 +142,20 @@ class InputPortPure[T1 <: Data](c: InputPortConfig[UInt, PureToken]) extends Inp
   var downstreamIdx = 0
   var upstreamConnected = false
 
-  def >>(down: EventPureReadMaster): Unit = {
+  def >>(down: PureTokenReadMaster): Unit = {
     io.inward(downstreamIdx) <> down
     downstreamIdx += 1
   }
 
-  def >>(downs: Seq[EventPureReadMaster]): Unit = downs.foreach(this >> _)
+  def >>(downs: Seq[PureTokenReadMaster]): Unit = downs.foreach(this >> _)
 
-  def <<(up: EventPureReadMaster): Unit = {
+  def <<(up: PureTokenReadMaster): Unit = {
     require(!upstreamConnected, "[Port.scala] connectUpstream called twice on InputPort")
     io.outward <> up
     upstreamConnected = true
   }
 
-  def <<(up: Vec[EventPureReadMaster]): Unit = this << up(0)
+  def <<(up: Vec[PureTokenReadMaster]): Unit = this << up(0)
 }
 
 case class OutputPortConfig[T1 <: Data, T2 <: Token[T1]](
@@ -164,8 +166,8 @@ case class OutputPortConfig[T1 <: Data, T2 <: Token[T1]](
   def nWritersWidth: Width = if (nWriters == 1) 1.W else log2Ceil(nWriters).W
 }
 abstract class OutputPortIO[T1 <: Data, T2 <: Token[T1]](c: OutputPortConfig[T1, T2]) extends ReactorPortIO[T1,T2] {
-  val inward: Vec[EventWriteSlave[T1,T2]]
-  val outward: EventWriteMaster[T1,T2]
+  val inward: Vec[TokenWriteSlave[T1,T2]]
+  val outward: TokenWriteMaster[T1,T2]
 
   def driveDefaults(): Unit = {
     inward.foreach(_.driveDefaults())
@@ -173,26 +175,21 @@ abstract class OutputPortIO[T1 <: Data, T2 <: Token[T1]](c: OutputPortConfig[T1,
   }
 
   def plugInwards(): Unit = {
-    inward.foreach(i => {
-      i.fire := false.B
-      i.req.valid := false.B
-      i.req.token := DontCare
-      i.req.present := false.B
-    })
+    inward.foreach(_.driveDefaultsFlipped())
   }
 }
 
 class OutputPortSingleValueIO[T1 <: Data](c: OutputPortConfig[T1, SingleToken[T1]]) extends OutputPortIO(c) {
-  val inward = Vec(c.nWriters, new EventSingleValueWriteSlave(c.genData))
-  val outward = new EventSingleValueWriteMaster(c.genData)
+  val inward = Vec(c.nWriters, new SingleTokenWriteSlave(c.genData))
+  val outward = new SingleTokenWriteMaster(c.genData)
 }
 class OutputPortPureIO(c: OutputPortConfig[UInt, PureToken]) extends OutputPortIO(c) {
-  val inward = Vec(c.nWriters, new EventPureWriteSlave)
-  val outward = new EventPureWriteMaster
+  val inward = Vec(c.nWriters, new PureTokenWriteSlave)
+  val outward = new PureTokenWriteMaster
 }
 class OutputPortArrayIO[T1 <: Data](c: OutputPortConfig[T1, ArrayToken[T1]]) extends OutputPortIO(c) {
-  val inward = Vec(c.nWriters, new EventArrayWriteSlave(c.genData, c.genToken))
-  val outward = new EventArrayWriteMaster(c.genData, c.genToken)
+  val inward = Vec(c.nWriters, new ArrayTokenWriteSlave(c.genData, c.genToken))
+  val outward = new ArrayTokenWriteMaster(c.genData, c.genToken)
 }
 
 abstract class OutputPort[T1 <: Data, T2 <: Token[T1]](c: OutputPortConfig[T1, T2]) extends Module {
@@ -218,8 +215,7 @@ abstract class OutputPort[T1 <: Data, T2 <: Token[T1]](c: OutputPortConfig[T1, T
       }
     }
 
-    assert(!(io.outward.fire && !io.outward.ready))
-    assert(!(io.outward.req.valid && !io.outward.ready))
+    assert(!(io.outward.fire && !io.outward.req.ready))
   }
 
   var upstreamIdx = 0
@@ -230,13 +226,13 @@ class OutputPortSingleValue[T1 <: Data](c: OutputPortConfig[T1, SingleToken[T1]]
   val io = IO(new OutputPortSingleValueIO(c))
   main()
 
-  def <<(up: EventSingleValueWriteMaster[T1]): Unit = {
+  def <<(up: SingleTokenWriteMaster[T1]): Unit = {
     io.inward(upstreamIdx) <> up
     upstreamIdx += 1
   }
-  def <<(ups: Seq[EventSingleValueWriteMaster[T1]]): Unit = ups.foreach( this << _)
+  def <<(ups: Seq[SingleTokenWriteMaster[T1]]): Unit = ups.foreach( this << _)
 
-  def >>(down: EventSingleValueWriteMaster[T1]): Unit = {
+  def >>(down: SingleTokenWriteMaster[T1]): Unit = {
     require(!downstreamConnected)
     io.outward <> down
     downstreamConnected = true
@@ -246,14 +242,14 @@ class OutputPortArray[T1 <: Data](c: OutputPortConfig[T1, ArrayToken[T1]]) exten
   val io = IO(new OutputPortArrayIO(c))
   main()
 
-  def <<(up: EventArrayWriteMaster[T1]): Unit = {
+  def <<(up: ArrayTokenWriteMaster[T1]): Unit = {
     io.inward(upstreamIdx) <> up
     upstreamIdx += 1
   }
 
-  def <<(ups: Seq[EventArrayWriteMaster[T1]]): Unit = ups.foreach(this << _)
+  def <<(ups: Seq[ArrayTokenWriteMaster[T1]]): Unit = ups.foreach(this << _)
 
-  def >>(down: EventArrayWriteMaster[T1]): Unit = {
+  def >>(down: ArrayTokenWriteMaster[T1]): Unit = {
     require(!downstreamConnected)
     io.outward <> down
     downstreamConnected = true
@@ -264,14 +260,14 @@ class OutputPortPure[T1 <: Data](c: OutputPortConfig[T1, ArrayToken[T1]]) extend
   val io = IO(new OutputPortArrayIO(c))
   main()
 
-  def <<(up: EventPureWriteMaster): Unit = {
+  def <<(up: PureTokenWriteMaster): Unit = {
     io.inward(upstreamIdx) <> up
     upstreamIdx += 1
   }
 
-  def <<(ups: Seq[EventPureWriteMaster]): Unit = ups.foreach(this << _)
+  def <<(ups: Seq[PureTokenWriteMaster]): Unit = ups.foreach(this << _)
 
-  def >>(down: EventPureWriteMaster): Unit = {
+  def >>(down: PureTokenWriteMaster): Unit = {
     require(!downstreamConnected)
     io.outward <> down
     downstreamConnected = true
@@ -296,33 +292,33 @@ class InputPortInwardConnectionFactory[T1 <: Data, T2 <: Token[T1]](genData: T1,
 
   // Array of the downstream Input ports of contained reactors
   // An ArrayBuffer is used to "iteratively" grow this array
-  var downstream: ArrayBuffer[EventReadMaster[T1,T2]] = ArrayBuffer()
+  var downstream: ArrayBuffer[TokenReadMaster[T1,T2]] = ArrayBuffer()
 
   // A Seq of Input ports in the parent reactor. Here we use an immutable Seq. Since we only create this
   // once, at construction.
-  var upstream: Seq[EventReadMaster[T1, T2]] = Seq()
+  var upstream: Seq[TokenReadMaster[T1, T2]] = Seq()
 
   def nDownstreamInwards = downstream.length
 
-  // Declare that a contained input port is downstream. Here the argument is a Seq of EventReadMaster (e.g. input ports)
+  // Declare that a contained input port is downstream. Here the argument is a Seq of TokenReadMaster (e.g. input ports)
   // This is because the contained input port might have multiple "channels" because it itself might have contained reactors
   // to which it forwards the connection.
-  def declareDownstream(down: Seq[EventReadMaster[T1,T2]]) = {
+  def declareDownstream(down: Seq[TokenReadMaster[T1,T2]]) = {
     down.foreach(downstream += _)
   }
   // Convenient shorthand for declareDownstream
-  def >>(down: Seq[EventReadMaster[T1,T2]]) = {
+  def >>(down: Seq[TokenReadMaster[T1,T2]]) = {
     declareDownstream(down)
   }
 
   // Declare the Input port in the parent reactor. Check the width.
   // Either it is equal the number of downstreams, or it is 1 greater (due to an internal port)
-  def declareInput(up: Seq[EventReadMaster[T1, T2]]) = {
+  def declareInput(up: Seq[TokenReadMaster[T1, T2]]) = {
     if (up.length == nDownstreamInwards) upstream = up
     else if (up.length == (nDownstreamInwards + 1)) upstream = up.drop(1)
     else require(false)
   }
-  def <<(up: Seq[EventReadMaster[T1, T2]]) = {
+  def <<(up: Seq[TokenReadMaster[T1, T2]]) = {
     declareInput(up)
   }
 
@@ -352,19 +348,19 @@ class SingleValueInputPortInwardConnectionFactory[T1 <: Data](genData: T1) exten
 
 abstract class UnconnectedInputPortIO[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) extends Bundle {
   val writeAbsent = Input(Bool())
-  val write: EventWriteMaster[T1,T2]
+  val write: TokenWriteMaster[T1,T2]
 }
 
 class UnconnectedSingleValueInputPortIO[T1 <: Data](genData: T1) extends UnconnectedInputPortIO(genData, new SingleToken(genData)) {
-  val write = new EventSingleValueWriteMaster(genData)
+  val write = new SingleTokenWriteMaster(genData)
 }
 
 class UnconnectedArrayInputPortIO[T1 <: Data](genData: T1, genToken: ArrayToken[T1]) extends UnconnectedInputPortIO(genData, genToken) {
-  val write = new EventArrayWriteMaster(genData, genToken)
+  val write = new ArrayTokenWriteMaster(genData, genToken)
 }
 
 class UnconnectedPureInputPortIO extends UnconnectedInputPortIO(UInt(0.W),new PureToken) {
-  val write = new EventPureWriteMaster
+  val write = new PureTokenWriteMaster
 }
 
 abstract class UnconnectedInputPort[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) extends Module {
@@ -373,7 +369,7 @@ abstract class UnconnectedInputPort[T1 <: Data, T2 <: Token[T1]](genData: T1, ge
   def main() = {
     io.write.driveDefaults()
     when(io.writeAbsent) {
-      io.write.writeAbsentAndFire()
+      io.write.writeAbsent()
     }
   }
 }

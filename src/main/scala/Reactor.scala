@@ -14,6 +14,9 @@ package object globals {
   val defToken = new SingleToken(defData)
   val pureData = UInt(8.W)
 
+  val defWr = new TokenWrDat(defData)
+  val defRd = new TokenRdResp(defData)
+
 }
 case class GlobalReactorConfig(
                               timeout: Time
@@ -67,14 +70,14 @@ class ReactorPhysicalFlippedIO(org: ReactorPhysicalIO) extends Bundle {
 
   println(org.getAllPorts)
 
-  val ports: MixedVec[EventWriteSlave[_ <: Data, _ <: Token[_<:Data]]] = MixedVec(Seq.tabulate(org.getAllPorts.size)( i =>
+  val ports: MixedVec[TokenWriteSlave[_ <: Data, _ <: Token[_<:Data]]] = MixedVec(Seq.tabulate(org.getAllPorts.size)( i =>
     org.getAllPorts(i) match {
-      case p: EventPureReadMaster => new EventPureWriteSlave
-      case p: EventSingleValueReadMaster[_] => new EventSingleValueWriteSlave(p.genData)
-      case p: EventArrayReadMaster[_] => new EventArrayWriteSlave(p.genData, p.genToken)
+      case p: PureTokenReadMaster => new PureTokenWriteSlave
+      case p: SingleTokenReadMaster[_] => new SingleTokenWriteSlave(p.genData)
+      case p: ArrayTokenReadMaster[_] => new ArrayTokenWriteSlave(p.genData, p.genToken)
       case _ =>
         require(false, s"ReactorPhysicalIO had a port of unrecognized type: ${org.getAllPorts(i)}")
-        new EventPureWriteSlave
+        new PureTokenWriteSlave
     }))
 
   def getAllPorts: Seq[Data] = this.getElements.head.asInstanceOf[MixedVec[Data]].toSeq
@@ -88,8 +91,8 @@ case class ReactorTriggerConfig(
 )
 
 class ReactorTriggerIO(cfg: ReactorTriggerConfig) extends Bundle {
-  val localTimerTriggers = Vec(cfg.timers.local, new EventPureWriteSlave)
-  val containedTimerTriggers = Vec(cfg.timers.contained, new EventPureWriteSlave)
+  val localTimerTriggers = Vec(cfg.timers.local, new PureTokenWriteSlave)
+  val containedTimerTriggers = Vec(cfg.timers.contained, new PureTokenWriteSlave)
 
   def allTimerTriggers = localTimerTriggers ++ containedTimerTriggers
 }
@@ -125,7 +128,7 @@ abstract class Reactor extends Module {
   // Is the current Reactor (and any contained reactor idle?)
   def isIdle(): Bool = {
     ( childReactors.map(_.statusIO.idle) ++
-      inPorts.map(!_.io.outward.resp.valid)
+      inPorts.map(!_.io.outward.token)
       ).reduceOption(_ && _).getOrElse(true.B)
   }
 

@@ -17,8 +17,8 @@ abstract class ReactionIO() extends Bundle {
   def driveDefaults(): Unit = {
     for (elt <- this.getElements) {
       elt match {
-        case value: EventReadMaster[_,_] => value.driveDefaults()
-        case value: EventWriteMaster[_,_] => value.driveDefaults()
+        case value: TokenReadMaster[_,_] => value.driveDefaults()
+        case value: TokenWriteMaster[_,_] => value.driveDefaults()
         case value: StateReadWriteMaster[_,_] => value.driveDefaults()
         case _ =>
       }
@@ -47,8 +47,8 @@ class ReactionStatusIO extends Bundle {
 }
 
 class ReactionPrecedencePorts(c: ReactionConfig) extends Bundle {
-  val precedenceIn = Vec(c.nPrecedenceIn, new EventPureReadMaster)
-  val precedenceOut = Vec(c.nPrecedenceOut, new EventPureWriteMaster)
+  val precedenceIn = Vec(c.nPrecedenceIn, new PureTokenReadMaster)
+  val precedenceOut = Vec(c.nPrecedenceOut, new PureTokenWriteMaster)
 
   def driveDefaults() = {
     precedenceIn.foreach(_.driveDefaults())
@@ -67,13 +67,13 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
   val precedenceIO = IO(new ReactionPrecedencePorts(c))
   val statusIO = IO(new ReactionStatusIO())
 
-  val triggers: Seq[EventReadMaster[ _<: Data, _ <: Token[_<:Data]]] = Seq()
-  val dependencies: Seq[EventReadMaster[ _<: Data, _ <: Token[_<:Data]]] = Seq()
-  val antiDependencies: Seq[EventWriteMaster[ _<: Data, _ <: Token[_<:Data]]] = Seq()
+  val triggers: Seq[TokenReadMaster[ _<: Data, _ <: Token[_<:Data]]] = Seq()
+  val dependencies: Seq[TokenReadMaster[ _<: Data, _ <: Token[_<:Data]]] = Seq()
+  val antiDependencies: Seq[TokenWriteMaster[ _<: Data, _ <: Token[_<:Data]]] = Seq()
   val states: Seq[StateReadWriteMaster[_ <: Data, _ <: Token[_<:Data]]] = Seq()
 
-  val precedenceIn: Seq[EventReadMaster[UInt, PureToken]] = precedenceIO.precedenceIn.toSeq
-  val precedenceOut: Seq[EventWriteMaster[UInt, PureToken]] = precedenceIO.precedenceOut.toSeq
+  val precedenceIn: Seq[TokenReadMaster[UInt, PureToken]] = precedenceIO.precedenceIn.toSeq
+  val precedenceOut: Seq[TokenWriteMaster[UInt, PureToken]] = precedenceIO.precedenceOut.toSeq
 
   var reactionsAfter: ArrayBuffer[Reaction] = ArrayBuffer()
   var reactionsBefore: ArrayBuffer[Reaction] = ArrayBuffer()
@@ -90,10 +90,10 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
 
   // Conditions to fire a reaction
   def fireReaction: Bool = {
-      triggers.map(_.resp.valid).reduce(_ && _) &&
-        dependencies.map(_.resp.valid).foldLeft(true.B)(_ && _)  &&
-        precedenceIn.map(_.resp.valid).foldLeft(true.B)(_ && _) &&
-        antiDependencies.map(_.ready).foldLeft(true.B)(_ && _)
+      triggers.map(_.token).reduce(_ && _) &&
+        dependencies.map(_.token).foldLeft(true.B)(_ && _)  &&
+        precedenceIn.map(_.token).foldLeft(true.B)(_ && _) &&
+        antiDependencies.map(_.req.ready).foldLeft(true.B)(_ && _)
   }
 
   // FIXME: Do operator overloading so we can do "r1 > r2 > r3 > r4`
@@ -128,14 +128,14 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
   // The user uses `upstream.precedes(downstream)` and internally the upstream
   // makes a `_isPrecededBy
   var precedenceInIdx = 0
-  private def _isPrecededBy(upstreamReaction: Reaction, upstreamPort: EventReadSlave[UInt, PureToken]): Unit = {
+  private def _isPrecededBy(upstreamReaction: Reaction, upstreamPort: TokenReadSlave[UInt, PureToken]): Unit = {
     require(precedenceIn.length > precedenceInIdx)
     precedenceIn(precedenceInIdx) <> upstreamPort
     reactionsBefore += upstreamReaction
   }
 
   def hasPresentTriggers: Bool = {
-    triggers.map(_.resp.present).reduce(_ || _)
+    triggers.map(_.present).reduce(_ || _)
   }
 
   // This is the user-supplied reaction body
@@ -150,8 +150,8 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
   // Updates the register containing the current logical tag based on the tag of the incoming events.
   def updateCurrentLogicalTag() = {
     for (t <- triggers) {
-      when(t.resp.valid && t.resp.present) {
-        logicalTag := t.resp.token.tag
+      when(t.fire && t.present) {
+        logicalTag := t.tag
       }
     }
   }
@@ -186,7 +186,10 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
       }
 
       is(sDone) {
-        antiDependencies.foreach(_.fire := true.B)
+        antiDependencies.foreach{ f =>
+          f.fire := true.B
+          f.tag := logicalTag
+        }
         precedenceOut.foreach(_.fire := true.B)
         triggers.foreach(_.fire := true.B)
         precedenceIn.foreach(_.fire := true.B)
