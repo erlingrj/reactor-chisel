@@ -180,10 +180,14 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
             when(EventMode.hasLocalEvent(regExecute.asUInt)) {
               t.fire := true.B
               when (regWasPhysical) {
-                t.req.valid := phyEventQueue.io.triggerVec(i)
+                val present = phyEventQueue.io.triggerVec(i)
+                t.req.valid := present
+                t.absent := !present
                 t.tag := phyEventQueue.io.nextEventTag.bits
               }.otherwise {
-                t.req.valid := eventQueue.io.triggerVec(i)
+                val present = eventQueue.io.triggerVec(i)
+                t.req.valid := present
+                t.absent := !present
                 t.tag := eventQueue.io.nextEventTag
               }
             }.elsewhen(EventMode.hasExternalEvent(regExecute.asUInt)) {

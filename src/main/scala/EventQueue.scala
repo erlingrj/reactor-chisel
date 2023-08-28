@@ -289,6 +289,7 @@ class PhysicalActionEventQueueIO(nPhysicalActions: Int, nTimers: Int) extends Bu
 
   def driveDefaults()= {
     triggerVec.foreach(_ := false.B)
+    phySchedules.foreach(_.driveDefaults())
     nextEventTag.valid := false.B
     nextEventTag.bits := 0.U
   }
@@ -363,6 +364,7 @@ object PhysicalActionConnector {
       conn.head.io.write.tag := trigGenTrigger.tag // FIXME: Hacky way of overriding the tag signal so that the TriggerGenerator decides the tag of any Physical Action event
 
       trigGenTrigger.req.ready := conn.head.io.write.req.ready
+      trigGenTrigger.dat.nodeq()
 
       // Connect the fire signal from the top-level IO port to the TriggerGenerator
       trigGenSched.driveDefaultsFlipped()

@@ -21,6 +21,7 @@ class ArrayToken[T <: Data](gen:T, val depth: Int) extends Token(gen) {
   val data = gen
 
   def addrWidth = Math.max(1,log2Ceil(depth))
+  def sizeWidth = addrWidth+1
 }
 class FifoToken[T <: Data](gen:T, val depth: Int) extends Token(gen) {
   val data = gen
@@ -45,7 +46,7 @@ class TokenRdReq[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bundle
 
 class ArrayTokenRdReq[T1 <: Data](gen1: T1, gen2: ArrayToken[T1]) extends TokenRdReq(gen1,gen2) {
   val addr = UInt(gen2.addrWidth.W)
-  val size = UInt(gen2.addrWidth.W)
+  val size = UInt(gen2.sizeWidth.W)
   override def driveDefaults(): Unit = {
     super.driveDefaults()
     addr := 0.U
@@ -66,7 +67,7 @@ class TokenWrDat[T1 <: Data](gen1: T1) extends Bundle {
 
 class ArrayTokenWrReq[T1 <: Data](gen1: T1, gen2: ArrayToken[T1]) extends TokenWrReq(gen1,gen2) {
   val addr = UInt(gen2.addrWidth.W)
-  val size = UInt(gen2.addrWidth.W)
+  val size = UInt(gen2.sizeWidth.W)
   override def driveDefaults(): Unit = {
     super.driveDefaults()
     addr := 0.U
@@ -227,10 +228,6 @@ abstract class TokenWriteMaster[T1 <: Data, T2 <: Token[T1]] (genData: T1, genTo
   val tag = Output(Tag())
   val absent = Output(Bool())
 
-  def write(d: T1): DecoupledIO[TokenWrDat[T1]]
-
-  def write(addr: UInt, size: UInt): DecoupledIO[TokenWrDat[T1]]
-
   def writePresent(): Unit = {
     fire := true.B
     req.valid := true.B
@@ -248,9 +245,16 @@ abstract class TokenWriteMaster[T1 <: Data, T2 <: Token[T1]] (genData: T1, genTo
     dat.nodeq()
   }
 
+  // To "plug" a port, accept its data and drop it
+  def plugUnusedFromOutside(): Unit = {
+    req.deq()
+    dat.deq()
+  }
+
   def driveDefaults(): Unit = {
     fire := false.B
     tag := Tag(0)
+    absent := false.B
     req.noenq()
     dat.noenq()
   }
@@ -259,49 +263,16 @@ abstract class TokenWriteMaster[T1 <: Data, T2 <: Token[T1]] (genData: T1, genTo
 class SingleTokenWriteMaster[T1 <: Data] (genData: T1) extends TokenWriteMaster(genData, new SingleToken(genData)) {
   val req = Decoupled(new TokenWrReq(genData,new SingleToken(genData)))
   val dat = Decoupled(new TokenWrDat(genData))
-
-  def write(d: T1) = {
-    assert(req.ready && dat.ready, "[Event] Tried writing to a port which was not ready")
-    req.valid := true.B
-    dat.valid := true.B
-    dat.bits := d
-    dat
-  }
-
-  def write(addr: UInt, size: UInt) = {
-    require(false)
-    dat
-  }
 }
 
 class PureTokenWriteMaster extends TokenWriteMaster(UInt(0.W), new PureToken) {
   val req = Decoupled(new TokenWrReq(genData, new PureToken))
   val dat = Decoupled(new TokenWrDat(genData))
-
-
-  def write(addr: UInt, size: UInt) = {
-    require(false)
-    dat
-  }
-  def write(d: UInt) = write(d)
 }
 
 class ArrayTokenWriteMaster[T1 <: Data] (genData: T1, genToken: ArrayToken[T1]) extends TokenWriteMaster(genData, genToken) {
   val req = Decoupled(new ArrayTokenWrReq(genData,genToken))
   val dat = Decoupled(new TokenWrDat(genData))
-
-  def write(d: T1) = {
-    require(false)
-    dat
-  }
-
-  def write(addr: UInt, size: UInt) = {
-    assert(req.ready && dat.ready, "[Event] Tried writing to a port which was not ready")
-    req.valid := true.B
-    req.bits.addr := addr
-    req.bits.size := size
-    dat
-  }
 }
 
 // See TokenWriteMaster for signal description
@@ -324,10 +295,6 @@ abstract class TokenWriteSlave[T1 <: Data, T2 <: Token[T1]](genData: T1, genToke
     req.nodeq()
     dat.nodeq()
   }
-
-  def firedAbsent = fire && absent
-  def firedPresent = fire && req.valid && !absent
-  def firedHistory = fire && !absent && !req.valid
 }
 
 class SingleTokenWriteSlave[T1 <: Data](genData: T1) extends TokenWriteSlave(genData, new SingleToken(genData)) {

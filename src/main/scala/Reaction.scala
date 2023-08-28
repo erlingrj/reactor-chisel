@@ -96,7 +96,6 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
         antiDependencies.map(_.req.ready).foldLeft(true.B)(_ && _)
   }
 
-  // FIXME: Do operator overloading so we can do "r1 > r2 > r3 > r4`
   // Function for connecting a downstream precedence reaction.
   // The function is used like `upstream.precedes(downstream)`.
   var precedenceOutIdx = 0
@@ -104,15 +103,15 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
     require(precedenceOut.length > precedenceOutIdx, s"[Reaction.scala] Precedence connection failed, only ${precedenceOut.length} precedenceOut ports")
 
     // Create connection module for connecting the ports
-    val connection = Module(new PureConnection(ConnectionConfig(
+    val precedenceConn = Module(new PureConnection(ConnectionConfig(
       genData = UInt(0.W),
       genToken = new PureToken(),
       nChans = 1
     )))
 
-    connection.io.write <> precedenceOut(precedenceOutIdx)
+    precedenceConn.io.write <> precedenceOut(precedenceOutIdx)
 
-    down._isPrecededBy(this, connection.io.reads(0))
+    down._isPrecededBy(this, precedenceConn.io.reads(0))
 
     // Store a reference to this downstream reaction
     reactionsAfter += down
@@ -150,7 +149,7 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
   // Updates the register containing the current logical tag based on the tag of the incoming events.
   def updateCurrentLogicalTag() = {
     for (t <- triggers) {
-      when(t.fire && t.present) {
+      when(t.token && t.present) {
         logicalTag := t.tag
       }
     }
@@ -186,19 +185,20 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
       }
 
       is(sDone) {
+        // Send tokens (absent/present depending on whether they were written to) to all outgoing channels
         antiDependencies.foreach{ f =>
           f.fire := true.B
           f.tag := logicalTag
         }
-        precedenceOut.foreach(_.fire := true.B)
-        triggers.foreach(_.fire := true.B)
-        precedenceIn.foreach(_.fire := true.B)
-        precedenceOut.foreach(_.fire := true.B)
+        triggers.foreach(_.fire := true.B) // Consume tokens from all triggers
+        precedenceIn.foreach(_.fire := true.B) // Consume tokens from all precedence inputs
+        precedenceOut.foreach(_.writeAbsent()) // Write absence tokens to precedence ports. We dont want to trigger downstream just enable
         regState := sIdle
 
       }
     }
   }
+
   assert(!(regCycles > 200.U), "[Reaction] Reaction was running for over 200cc assumed error")
 
   // FIXME: These debug signals should be optional

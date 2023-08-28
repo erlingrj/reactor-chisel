@@ -1,7 +1,7 @@
 package reactor
 
 import chisel3._
-import chisel3.util.DecoupledIO
+import chisel3.util._
 
 object ReactionApi {
 
@@ -14,12 +14,30 @@ object ReactionApi {
    * @tparam T1
    * @tparam T2
    */
-  def lf_set[T1 <: Data, T2 <: Token[T1]](port: TokenWriteMaster[T1, T2], data: T1)(implicit reaction: Reaction): DecoupledIO[TokenWrDat[T1]] = {
-    port.write(data)
+  def lf_set[T1 <: Data](port: TokenWriteMaster[T1, SingleToken[T1]], data: T1)(implicit reaction: Reaction): Unit = {
+    port.dat.valid := true.B
+    port.dat.bits.data := data
+    assert(port.dat.ready)
   }
 
-  def lf_set[T1 <: Data, T2 <: Token[T1]](port: TokenWriteMaster[T1, T2], addr: UInt, size: UInt, data: T1)(implicit reaction: Reaction): DecoupledIO[TokenWrDat[T1]] = {
-    port.write(addr, size)
+  // FIXME: It would be nice to not have bits.data I.e. return DecoupledIO[T1] not the ArrayTokenRdResp...
+  def lf_set_array[T1 <: Data](port: ArrayTokenWriteMaster[T1], addr: UInt, size: UInt)(implicit reaction: Reaction): DecoupledIO[TokenWrDat[T1]] = {
+    val sIdle :: sReading :: Nil = Enum(2)
+    val regState = RegInit(sIdle)
+
+    switch(regState) {
+      is(sIdle) {
+        port.req.bits.addr := addr
+        port.req.bits.size := size
+        port.req.valid := true.B
+
+        when(port.req.fire) {
+          regState := sReading
+        }
+      }
+      is(sReading) {}
+    }
+    port.dat
   }
 
   /**
@@ -46,12 +64,30 @@ object ReactionApi {
    * @tparam T2
    * @return
    */
-  def lf_get[T1 <: Data, T2 <: Token[T1]](port: TokenReadMaster[T1, T2]): DecoupledIO[TokenRdResp[T1]] = {
-    port.read
+  def lf_get[T1 <: Data](port: TokenReadMaster[T1, SingleToken[T1]]): T1 = {
+    assert(port.token && port.present && port.resp.valid)
+    port.resp.ready := true.B
+    port.resp.bits.data
   }
 
-  def lf_get[T1 <: Data, T2 <: Token[T1]](port: TokenReadMaster[T1, T2], addr: UInt, size: UInt): DecoupledIO[TokenRdResp[T1]] = {
-    port.read(addr, size)
+  def lf_get_array[T1 <: Data](port: ArrayTokenReadMaster[T1], addr: UInt, size: UInt)(implicit reaction: Reaction): DecoupledIO[TokenRdResp[T1]] = {
+
+    val sIdle :: sReading :: Nil = Enum(2)
+    val regState = RegInit(sIdle)
+
+    switch(regState) {
+      is(sIdle) {
+        port.req.bits.addr := addr
+        port.req.bits.size := size
+        port.req.valid := true.B
+
+        when(port.req.fire) {
+          regState := sReading
+        }
+      }
+      is(sReading) {}
+    }
+    port.resp
   }
 
   /**

@@ -202,6 +202,14 @@ class TopLevelPorts(swPorts: SwIO, mainReactorPorts: ReactorIO) extends Module {
         swPort.io.ready := true.B // FIXME: This applies NO backpressure and we can have tokens in the regfile overwritten
         outputPorts += swPort
       }
+      case (s: SwArrayToken[Data], m: Vec[ArrayTokenReadMaster[Data]]) => {
+        println(s"Got ArrayToken Output")
+//        val swPort = Module(new TopLevelOutputArrayToken(s))
+
+      }
+      case (s: SwArrayToken[Data], m: ArrayTokenWriteMaster[Data]) => {
+
+      }
       case (_,_) => require(false)
     }
   }

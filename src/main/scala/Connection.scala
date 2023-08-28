@@ -155,10 +155,10 @@ class ArrayConnection[T <: Data](c: ConnectionConfig[T, ArrayToken[T]]) extends 
 
   val regIsWriting = RegInit(false.B)
   val regWrAddr = RegInit(0.U(c.genToken.addrWidth.W))
-  val regWrSize = RegInit(0.U(c.genToken.addrWidth.W))
-  val regWrCnt = RegInit(0.U(c.genToken.addrWidth.W))
+  val regWrSize = RegInit(0.U((c.genToken.sizeWidth).W))
+  val regWrCnt = RegInit(0.U((c.genToken.sizeWidth).W))
 
-
+//  printf("addr %d cnt %d size %d\n", regWrAddr, regWrCnt, regWrSize)
   switch(regState) {
     is(sIdle) {
       when(!regIsWriting) {
@@ -166,35 +166,35 @@ class ArrayConnection[T <: Data](c: ConnectionConfig[T, ArrayToken[T]]) extends 
         io.write.dat.ready := false.B
         when(io.write.req.fire) {
           present := true.B
-          regWrAddr := io.write.req.bits.asTypeOf(new ArrayTokenWrReq(c.genData, c.genToken)).addr
-          regWrSize := io.write.req.bits.asTypeOf(new ArrayTokenWrReq(c.genData, c.genToken)).size
+          regWrAddr := io.write.req.bits.addr
+          regWrSize := io.write.req.bits.size
           regWrCnt := 0.U
           regIsWriting := true.B
         }
       }.otherwise {
-          io.write.dat.ready := true.B
-          when (io.write.dat.fire) {
-            data.foreach(_.write(regWrAddr, io.write.dat.bits.data))
-            regWrAddr := regWrAddr + 1.U
-            regWrCnt := regWrCnt + 1.U
-            when(regWrCnt === regWrSize-1.U) {
-              regIsWriting := false.B
-            }
+        io.write.dat.ready := true.B
+        val doneWriting = WireDefault(false.B)
+        when(io.write.dat.fire) {
+          data.foreach(_.write(regWrAddr, io.write.dat.bits.data))
+          regWrAddr := regWrAddr + 1.U
+          regWrCnt := regWrCnt + 1.U
+          when(regWrCnt === regWrSize - 1.U) {
+            regIsWriting := false.B
+            doneWriting := true.B
           }
-
-        assert(!io.write.fire, "[Connection] Fired before all writes requested were performed")
         }
+        assert(!(io.write.fire && !doneWriting), "[Connection] Fired before all writes requested were performed")
       }
     }
-
     is(sToken) {
       for (i <- 0 until c.nChans) {
         io.reads(i).present := present && !done
         val regIsReading = RegInit(false.B)
         val regMemRespValid = RegInit(false.B)
         val regRdAddr = RegInit(0.U(c.genToken.addrWidth.W))
-        val regRdSize = RegInit(0.U(c.genToken.addrWidth.W))
-        val regRdCnt = RegInit(0.U(c.genToken.addrWidth.W))
+        val regRdSize = RegInit(0.U((c.genToken.sizeWidth.W))) // + 1 since we have to
+        val regRdCnt = RegInit(0.U((c.genToken.sizeWidth).W))
+        val doneReading = WireDefault(false.B)
         when(!regIsReading) {
           io.reads(i).req.ready := true.B
           io.reads(i).resp.valid := false.B
@@ -209,17 +209,18 @@ class ArrayConnection[T <: Data](c: ConnectionConfig[T, ArrayToken[T]]) extends 
           val readResp = data(i).read(regRdAddr)
           regMemRespValid := true.B
 
-          io.reads(i).resp.ready := regMemRespValid
+          io.reads(i).resp.valid := regMemRespValid
           io.reads(i).resp.bits.data := readResp
 
-          when(io.reads(i).resp.fire) {
+          when(io.reads(i).resp.fire || !regMemRespValid) {
             regRdAddr := regRdAddr + 1.U
             regRdCnt := regRdCnt + 1.U
-            when(regRdCnt === regRdSize - 1.U) {
+            when(regRdCnt === regRdSize) {
               regIsReading := false.B
+              doneReading := true.B
             }
           }
-          assert(!io.reads(i).fire, "[Connection] Fired before all reads requested were accepted")
+          assert(!(io.reads(i).fire && !doneReading), "[Connection] Fired before all reads requested were accepted")
         }
       }
 
@@ -227,6 +228,7 @@ class ArrayConnection[T <: Data](c: ConnectionConfig[T, ArrayToken[T]]) extends 
         present := false.B
       }
     }
+  }
 }
 
 // The `genFunc` is what complicates this.

@@ -69,7 +69,7 @@ abstract class InputPort[T1 <: Data, T2 <: Token[T1]](c: InputPortConfig[T1,T2])
 
 
       // New token from upstream
-      when(regCount === 0.U && io.outward.resp.valid) {
+      when(regCount === 0.U && io.outward.token) {
         regTokens.foreach(_ := true.B)
       }
 
