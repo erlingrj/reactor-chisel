@@ -7,13 +7,6 @@ import reactor.Schedule._
 import scala.collection.immutable
 import scala.collection.mutable.ArrayBuffer
 
-class TimerTriggerIO(nTimers: Int) extends Bundle {
-  val timers = Vec(nTimers, new TriggerIO())
-  def driveDefaults() = {
-    timers.foreach(_.trigger.driveDefaults())
-  }
-}
-
 class ShutdownCommand extends Bundle {
   val valid = Bool() // Is the shutdown valid
   val independent = Bool() // Is the shutdown simultanous to an event from the FPGA?
@@ -68,8 +61,9 @@ class ExecuteIO extends Bundle {
   }
 }
 
-class TriggerGeneratorIO(nTimers: Int) extends Bundle {
-  val triggers = new TimerTriggerIO(nTimers)
+class TriggerGeneratorIO(nTimers: Int, nPhys: Int) extends Bundle {
+  val timerTriggers = Vec(nTimers, new EventPureWriteMaster())
+  val phyTriggers = Vec(nPhys, new EventPureWriteMaster())
   val nextEventTag = Output(Tag())
   val tagAdvanceGrant = Input(Tag())
   val shutdownCommand = Input(new ShutdownCommand) // External request for termination at TAG
@@ -78,19 +72,25 @@ class TriggerGeneratorIO(nTimers: Int) extends Bundle {
 
   val inputPresent = Input(Bool())
   val terminate = Output(Bool())
+  val phySchedules = Vec(nPhys, new EventPureWriteSlave())
 
   def driveDefaults() = {
-    triggers.driveDefaults()
+    timerTriggers.foreach(_.driveDefaults())
     execute.valid := false.B
     execute.bits.driveDefaults()
     terminate := false.B
     nextEventTag := Tag(0)
+    phyTriggers.foreach(_.driveDefaults())
+    phySchedules.foreach(_.driveDefaults())
   }
 }
 
 class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor) extends Module {
-  val nTimers = mainReactor.triggerIO.allTriggers.size
-  val io = IO(new TriggerGeneratorIO(nTimers))
+  val nTimers = mainReactor.triggerIO.allTimerTriggers.size
+  val nPhys = mainReactor.physicalIO.getAllPorts.size
+  def nTriggers = nTimers + nPhys
+
+  val io = IO(new TriggerGeneratorIO(nTimers, nPhys))
   io.driveDefaults()
 
   // The clock
@@ -101,7 +101,7 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
   val (hyperperiod, initialSchedule, periodicSchedule, shutdown) = createSchedules(mainReactor.allTriggerConfigs().map(_.cfg).toSeq)
   printSchedules((initialSchedule, periodicSchedule))
   val eventQueueParams = EventQueueParams(
-    nTimers,
+    nTriggers,
     hyperperiod,
     timeout,
     shutdown,
@@ -114,6 +114,19 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
   io.terminate := eventQueue.io.terminate
   io.nextEventTag := eventQueue.io.nextEventTag
 
+
+  val phyEventQueue = Module(new PhysicalActionEventQueue(nPhys, nTimers))
+  phyEventQueue.io.nextEventTag.ready := false.B
+  // Route the scheduling of physical actions out
+  phyEventQueue.io.phySchedules zip io.phySchedules foreach {f => f._1 <> f._2}
+
+  // Drive the tag signal here, from the clock. A physical action gets the current time as its tag.
+  phyEventQueue.io.phySchedules.foreach(_.req.token.tag := mainClock.now)
+  val eventQPick = eventQueue.io.nextEventTag < phyEventQueue.io.nextEventTag.bits || !phyEventQueue.io.nextEventTag.valid
+  val nextEventTag = Mux(eventQPick, eventQueue.io.nextEventTag, phyEventQueue.io.nextEventTag.bits)
+
+
+
   if(!standalone) {
     val eq = eventQueue.asInstanceOf[EventQueueCodesign]
     eq.shutdownIO.simultanous := io.shutdownCommand.valid && !io.shutdownCommand.independent
@@ -121,14 +134,13 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
     eq.shutdownIO.independentTag := io.tagAdvanceGrant
   }
 
-
   // The scheduler
   val scheduler = Module(new Scheduler()).io
   scheduler.tagAdvanceGrant.bits := io.tagAdvanceGrant
   scheduler.tagAdvanceGrant.valid := io.coordinationValid
   scheduler.now := mainClock.now
   scheduler.swInputPresent := io.inputPresent
-  scheduler.nextEventTag := eventQueue.io.nextEventTag
+  scheduler.nextEventTag := nextEventTag
   scheduler.execute <> io.execute
 
   // The following is just for debug
@@ -140,34 +152,43 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
 
   // State machine for handling the firing of each event. We allow backpressure from the Reactors.
   // I.e. we will block in sFiring until all reactors are ready to receive the events.
-  val sIdle :: sFiring :: Nil = Enum(2)
+  val sIdle :: sFire :: Nil = Enum(2)
   val regState = RegInit(sIdle)
   val regExecute = RegInit(EventMode.noEvent)
-  val regTriggerFired = RegInit(VecInit(Seq.fill(nTimers)(false.B)))
+  val regWasPhysical = RegInit(false.B)
+  val regTriggerFired = RegInit(VecInit(Seq.fill(nTriggers)(false.B)))
 
   switch (regState) {
     is (sIdle) {
       scheduler.execute.ready := true.B
       when (scheduler.execute.valid) {
-        regState := sFiring
+        regState := sFire
         regExecute := scheduler.execute.bits.eventMode
+        regWasPhysical := !eventQPick
       }
     }
 
     // We stay in this state until all the triggers have fired sucessfully. Essentially, we are allowing
     // backpressure. This implies that we might be backpressured for a long enough time so that we lose events.
-    is (sFiring) {
+    is (sFire) {
       scheduler.execute.ready := false.B
-      for (i <- 0 until io.triggers.timers.size) {
+      // Drive all output trigger signals:
+      val triggers = io.timerTriggers ++ io.phyTriggers
+      for ((t, i) <- triggers.zipWithIndex) {
         when(!regTriggerFired(i)) {
-          when(io.triggers.timers(i).trigger.ready) {
+          when(t.ready) {
             when(EventMode.hasLocalEvent(regExecute.asUInt)) {
-              io.triggers.timers(i).trigger.req.valid := true.B
-              io.triggers.timers(i).trigger.req.present := eventQueue.io.triggerVec(i)
-              io.triggers.timers(i).trigger.req.token.tag := eventQueue.io.nextEventTag
-              io.triggers.timers(i).trigger.fire := true.B
+              t.req.valid := true.B
+              t.fire := true.B
+              when (regWasPhysical) {
+                t.req.present := phyEventQueue.io.triggerVec(i)
+                t.req.token.tag := phyEventQueue.io.nextEventTag.bits
+              }.otherwise {
+                t.req.present := eventQueue.io.triggerVec(i)
+                t.req.token.tag := eventQueue.io.nextEventTag
+              }
             }.elsewhen(EventMode.hasExternalEvent(regExecute.asUInt)) {
-              io.triggers.timers(i).trigger.writeAbsent()
+              t.writeAbsent()
             }
             regTriggerFired(i) := true.B
           }
@@ -177,7 +198,11 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
       // Check that all events have been fired. If so, go back to accepting new events.
       when (regTriggerFired.asUInt.andR) {
         when(EventMode.hasLocalEvent(regExecute.asUInt)) {
-         eventQueue.io.step := true.B
+          when (regWasPhysical) {
+            phyEventQueue.io.nextEventTag.ready := true.B
+          }.otherwise {
+            eventQueue.io.step := true.B
+          }
         }
         regState := sIdle
         regTriggerFired.foreach(_ := false.B)

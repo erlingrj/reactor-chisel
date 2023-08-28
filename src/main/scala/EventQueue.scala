@@ -21,7 +21,7 @@ object Schedule {
    * @param configs
    * @return
    */
-  def calculateHyperPeriod(configs: Seq[TimerConfig]): Time = {
+  def calculateHyperPeriod(configs: Seq[TimerTriggerConfig]): Time = {
     Time.nsec(
       configs
         .filterNot(_.period.ticks == 0)
@@ -31,15 +31,18 @@ object Schedule {
   }
 
   // Calculate the steps present in the schedule.
-  def calculateScheduleSteps(hyperPeriod: Time, configs: Seq[TimerConfig]): Seq[Time] = {
+  def calculateScheduleSteps(hyperPeriod: Time, configs: Seq[TriggerConfig]): Seq[Time] = {
     val steps = ArrayBuffer[Time]()
     for (c <- configs) {
-      if (!c.isShutdownTrigger) {
-        var time = c.offset
-        while (time == 0 || time < hyperPeriod) {
-          if (!steps.contains(time)) steps += time
-          if (c.period > 0) time += c.period else time = Time.FOREVER
-        }
+      c match {
+        case c: TimerTriggerConfig =>
+          var time = c.offset
+          while (time == 0 || time < hyperPeriod) {
+            if (!steps.contains(time)) steps += time
+            if (c.period > 0) time += c.period else time = Time.FOREVER
+          }
+        case _: StartupTriggerConfig => if (!steps.contains(Time.nsec(0))) steps += Time.nsec(0)
+        case _ =>
       }
     }
     steps.sorted.toSeq
@@ -57,8 +60,10 @@ object Schedule {
     }
   }
 
-  def createSchedules(configs: Seq[TimerConfig]): (Time, EventSchedule, EventSchedule, ScheduleElement)= {
-    val hyperPeriod = calculateHyperPeriod(configs)
+  def createSchedules(configs: Seq[TriggerConfig]): (Time, EventSchedule, EventSchedule, ScheduleElement)= {
+    val timers = configs.collect{ case t: TimerTriggerConfig => t}
+
+    val hyperPeriod = calculateHyperPeriod(timers)
     val periodicSchedule = ArrayBuffer[ScheduleElement]()
     val initialSchedule = ArrayBuffer[ScheduleElement]()
     val steps = calculateScheduleSteps(hyperPeriod, configs)
@@ -66,25 +71,28 @@ object Schedule {
 
     for (i <- steps) {
       // The periodic schedule is all timers with periods greater than zero
-      println(i.nsec - configs(0).offset.nsec)
-      println(configs(0).period.nsec)
-
-      val periodic = configs.map(c =>
-        c.period > 0 &&
-        !c.isShutdownTrigger &&
-        ((i.nsec - c.offset.nsec) % c.period.nsec == 0)
-      )
+      val periodic = configs.map {
+        case c: TimerTriggerConfig => c.period > 0 && (i.nsec - c.offset.nsec) % c.period.nsec == 0
+        case _ => false
+      }
 
       // Initial schedule is just all timers
-      val initial = configs.map(c =>
-        (i.nsec == c.offset.nsec) &&
-          !c.isShutdownTrigger
-      )
+      val initial = configs.map {
+        case c: TimerTriggerConfig => c.offset.nsec == i.nsec
+        case _: StartupTriggerConfig => i.nsec == 0
+        case _ => false
+      }
+
 
       periodicSchedule += ScheduleElement(i, periodic)
       initialSchedule += ScheduleElement(i, initial)
     }
-    val shutdownTriggers = configs.map(_.isShutdownTrigger)
+
+    val shutdownTriggers = configs.map {
+      case c: ShutdownTriggerConfig => true
+      case _ => false
+    }
+
     val shutdown = ScheduleElement(Time.FOREVER, shutdownTriggers)
 
     (hyperPeriod, initialSchedule.toSeq, periodicSchedule.toSeq, shutdown)
@@ -113,7 +121,7 @@ case class EventQueueParams(
   def scheduleWidth = nLocalTriggers
   def scheduleWidthBits = Math.max(log2Ceil(scheduleWidth), 1)
 
-  require(nLocalTriggers == shutdownTriggers.triggers.size)
+  require(nLocalTriggers == shutdownTriggers.triggers.size, "[EventQueue] Mismatch between nLocalTriggers and the widths of the schedules")
 }
 
 class EventQueueIO(p: EventQueueParams) extends Bundle {
@@ -121,6 +129,7 @@ class EventQueueIO(p: EventQueueParams) extends Bundle {
   val triggerVec = Vec(p.scheduleWidth, Output(Bool()))
   val step = Input(Bool())
   val terminate = Output(Bool())
+
 
   def driveDefaultsFlipped(): Unit = {
     step := false.B
@@ -270,5 +279,93 @@ class EventQueueCodesign(p: EventQueueParams) extends EventQueue(p) {
   when(regDone) {
     io.terminate := true.B
     io.nextEventTag := Tag.FOREVER
+  }
+}
+
+class PhysicalActionEventQueueIO(nPhysicalActions: Int, nTimers: Int) extends Bundle {
+  val phySchedules = Vec(nPhysicalActions, new EventPureWriteSlave)
+  val nextEventTag = Decoupled(Tag())
+  val triggerVec = Output(Vec(nTimers+nPhysicalActions, Bool()))
+
+  def driveDefaults()= {
+    triggerVec.foreach(_ := false.B)
+    nextEventTag.valid := false.B
+    nextEventTag.bits := 0.U
+  }
+}
+
+class PhysicalActionEventQueue(nPhysicalActions: Int, nTimers: Int) extends Module {
+  val io = IO(new PhysicalActionEventQueueIO(nPhysicalActions, nTimers))
+  io.driveDefaults()
+
+  if(nPhysicalActions > 0) {
+    val regNET = RegInit(0.U.asTypeOf(Tag()))
+    val regValids = RegInit(VecInit(Seq.fill(nPhysicalActions)(false.B)))
+
+    def isBusy = regValids.asUInt.orR
+
+    io.nextEventTag.valid := isBusy
+    io.nextEventTag.bits := regNET
+
+    // TriggerVec is prepended with the timer triggers which are all absent. (0.U(ntimers.W))
+    for (i <- 0 until nPhysicalActions) {
+      io.triggerVec(i + nTimers) := regValids(i)
+    }
+
+    // Current limitation. Only one outstanding physical action
+    for ((phy, idx) <- io.phySchedules.zipWithIndex) {
+      phy.ready := !isBusy
+      when(phy.fire) {
+        regValids(idx) := true.B
+        regNET := phy.req.token.tag
+      }
+    }
+    when(io.nextEventTag.fire) {
+      regValids.foreach(_ := false.B)
+    }
+
+  }
+}
+class PhysicalActionConnectorIO(mainIO: ReactorPhysicalIO, extIO: ReactorPhysicalFlippedIO) extends Bundle {
+  val main = mainIO
+  val ext = extIO
+  val triggers = Vec(ext.getAllPorts.size, new EventPureWriteMaster)
+  val schedules = Vec(ext.getAllPorts.size, new EventPureWriteSlave)
+}
+
+
+object PhysicalActionConnector {
+  def apply(mainIO: ReactorPhysicalIO, extIO: ReactorPhysicalFlippedIO, triggerGenIO: TriggerGeneratorIO): Unit = {
+    for (((main, ext), idx) <- (mainIO.getAllPorts zip extIO.getAllPorts).zipWithIndex) {
+      val (connFactory, mainIO, extIO) = (main, ext) match {
+        case (m: EventPureReadMaster, e: EventPureWriteSlave) =>
+          val c = new PureConnectionFactory
+          c << e
+          c >> m
+          (c, m, e)
+        case (m: EventSingleValueReadMaster[Data], e: EventSingleValueWriteSlave[Data]) =>
+          val c = new SingleValueConnectionFactory(e.genData)
+          c << e
+          c >> m
+          (c, m, e)
+        case (m: EventArrayReadMaster[Data], e: EventArrayWriteSlave[Data]) =>
+          val c = new ArrayConnectionFactory(e.genData, e.genToken)
+          c << e
+          c >> m
+          (c, m, e)
+      }
+      val conn = connFactory.construct()
+      val trigGenTrigger = triggerGenIO.phyTriggers(idx)
+      val trigGenSched = triggerGenIO.phySchedules(idx)
+      // Let the TriggerGenerator control when this connection fires and the tag it will be associated with
+      conn.head.io.write.fire := trigGenTrigger.fire
+      conn.head.io.write.req.token.asInstanceOf[Token[UInt]].tag := trigGenTrigger.req.token.tag // FIXME: Hacky way of overriding the tag signal so that the TriggerGenerator decides the tag of any Physical Action event
+
+      trigGenTrigger.ready := conn.head.io.write.ready
+
+      // Connect the fire signal from the top-level IO port to the TriggerGenerator
+      trigGenSched.fire := extIO.fire
+      trigGenSched.req.driveDefaults() // We only need the fire signal.
+    }
   }
 }

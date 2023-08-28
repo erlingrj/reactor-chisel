@@ -9,13 +9,17 @@ class StandaloneTopReactor(mainReactorGenFunc: () => Reactor)(implicit globalCfg
   val mainReactor = Module(mainReactorGenFunc())
   val io = IO(new StandaloneTopReactorIO)
   val externalIO = IO(mainReactor.externalIO.cloneType)
+  val physicalIO = IO(new ReactorPhysicalFlippedIO(mainReactor.physicalIO.cloneType))
   externalIO <> mainReactor.externalIO
 
   val trigGen = Module(new TriggerGenerator(true, globalCfg.timeout, mainReactor))
 
+  // Connect external physical IO, TriggerGenerator and physical IO on the main Reactor
+  PhysicalActionConnector(mainReactor.physicalIO, physicalIO, trigGen.io)
+
   // Connect the triggerGenerator to the mainReactor
-  for (i <- mainReactor.triggerIO.allTriggers.indices) {
-    mainReactor.triggerIO.allTriggers(i) <> trigGen.io.triggers.timers(i).trigger
+  for (i <- mainReactor.triggerIO.allTimerTriggers.indices) {
+    mainReactor.triggerIO.allTimerTriggers(i) <> trigGen.io.timerTriggers(i)
   }
 
   trigGen.io.inputPresent := false.B
