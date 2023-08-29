@@ -199,7 +199,6 @@ class TopLevelPorts(swPorts: SwIO, mainReactorPorts: ReactorIO) extends Module {
         val swPort = Module(new TopLevelOutputSingleToken(s.data.cloneType))
         s := swPort.io.sw
         swPort.io.main <> m
-        swPort.io.ready := true.B // FIXME: This applies NO backpressure and we can have tokens in the regfile overwritten
         outputPorts += swPort
       }
       case (s: SwArrayToken[Data], m: Vec[ArrayTokenReadMaster[Data]]) => {
@@ -273,6 +272,7 @@ class TopLevelInputSingleToken[T <: Data](genData: T) extends TopLevelInput {
       io.main.req.valid := io.swPresent.bits
       io.main.dat.valid := io.swPresent.bits
       io.main.dat.bits.data := io.swData
+
     }.otherwise {
       io.main.writeAbsent()
     }
@@ -283,7 +283,6 @@ class TopLevelInputSingleToken[T <: Data](genData: T) extends TopLevelInput {
  *  IO for each top-level Output port
  */
 abstract class TopLevelOutputIO extends Bundle {
-  val ready = Input(Bool()) // Backpressure signal. Unless high, we will not accept tokens from the main reactor
   val fire = Output(Bool()) // Indicates that tokens from the main reactor have been consumed
   val consume = Input(Bool())
 }
@@ -308,24 +307,39 @@ class TopLevelOutputSingleToken[T <: Data](genData: T) extends TopLevelOutput {
 
   val regData = RegInit(0.U.asTypeOf(genData))
   val regPresent = RegInit(false.B)
+  val regToken = RegInit(false.B)
   io.sw.data := regData
   io.sw.present := regPresent
 
-  io.main.req.ready := io.ready
-  io.main.dat.ready := io.ready
+  io.main.req.ready := !regToken
+  io.main.dat.ready := !regToken
 
-  when (io.main.req.valid) {
-    regPresent := true.B
-    assert(io.ready)
+  when(io.main.firedAbsent()) {
+    regToken := true.B
+    regPresent := false.B
+    assert(!regToken)
   }
 
-  when(io.main.dat.valid) {
+  when(io.main.firedPresent()) {
+    regToken := true.B
+    regPresent := true.B
+    assert(!regToken)
+  }
+
+  when(io.main.firedHistory()) {
+    regToken := true.B
+    assert(!regToken)
+  }
+
+  when(io.main.dat.fire) {
     regData := io.main.dat.bits.data
-    assert(io.ready)
+    regPresent := true.B
+    assert(!regToken)
   }
 
   when(io.consume) {
     regPresent := false.B
+    regToken := false.B
     regData := 0.U.asTypeOf(genData)
   }
 

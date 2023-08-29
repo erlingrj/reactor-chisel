@@ -295,6 +295,10 @@ abstract class TokenWriteSlave[T1 <: Data, T2 <: Token[T1]](genData: T1, genToke
     req.nodeq()
     dat.nodeq()
   }
+
+  def firedAbsent() = fire && absent
+  def firedPresent() = fire && req.valid && !absent
+  def firedHistory() = fire && !req.valid && !absent
 }
 
 class SingleTokenWriteSlave[T1 <: Data](genData: T1) extends TokenWriteSlave(genData, new SingleToken(genData)) {
