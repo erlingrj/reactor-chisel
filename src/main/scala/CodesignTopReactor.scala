@@ -240,8 +240,8 @@ class TopLevelPorts(swPorts: SwIO, mainReactorPorts: ReactorIO) extends Module {
 }
 
 abstract class TopLevelInputIO extends Bundle {
-  val execute = Flipped(Decoupled(new ExecuteIO))
-  val swPresent = Flipped(Decoupled(Bool()))
+  val execute = Flipped(Decoupled(new ExecuteIO)) // Signals all the top-level inputs to spawn tokens to send to the main reactor
+  val swPresent = Flipped(Decoupled(Bool())) // This interface is for consuming a token from the SwInputPresent module.
 }
 
 abstract class TopLevelInput extends Module {
@@ -266,13 +266,13 @@ class TopLevelInputSingleToken[T <: Data](genData: T) extends TopLevelInput {
 
   when(io.execute.fire) {
     io.main.fire := true.B
-    io.swPresent.ready := true.B
+    io.swPresent.ready := true.B // Should we really consume these unless we have an external event?
     io.main.tag := io.execute.bits.tag
     assert(io.swPresent.fire)
     when (EventMode.hasExternalEvent(io.execute.bits.eventMode.asUInt)) {
       io.main.req.valid := io.swPresent.bits
       io.main.dat.valid := io.swPresent.bits
-      io.main.dat.bits := io.swData
+      io.main.dat.bits.data := io.swData
     }.otherwise {
       io.main.writeAbsent()
     }
@@ -320,7 +320,7 @@ class TopLevelOutputSingleToken[T <: Data](genData: T) extends TopLevelOutput {
   }
 
   when(io.main.dat.valid) {
-    regData := io.main.dat.bits
+    regData := io.main.dat.bits.data
     assert(io.ready)
   }
 
