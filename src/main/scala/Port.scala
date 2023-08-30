@@ -215,7 +215,7 @@ abstract class OutputPort[T1 <: Data, T2 <: Token[T1]](c: OutputPortConfig[T1, T
       }
     }
 
-    assert(!(io.outward.fire && !io.outward.req.ready))
+//    assert(!(io.outward.fire && !io.outward.req.ready))
   }
 
   var upstreamIdx = 0

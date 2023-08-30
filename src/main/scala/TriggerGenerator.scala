@@ -114,7 +114,6 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
   io.terminate := eventQueue.io.terminate
   io.nextEventTag := eventQueue.io.nextEventTag
 
-
   val phyEventQueue = Module(new PhysicalActionEventQueue(nPhys, nTimers))
   phyEventQueue.io.nextEventTag.ready := false.B
   // Route the scheduling of physical actions out
@@ -124,8 +123,6 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
   phyEventQueue.io.phySchedules.foreach(_.tag := mainClock.now)
   val eventQPick = eventQueue.io.nextEventTag < phyEventQueue.io.nextEventTag.bits || !phyEventQueue.io.nextEventTag.valid
   val nextEventTag = Mux(eventQPick, eventQueue.io.nextEventTag, phyEventQueue.io.nextEventTag.bits)
-
-
 
   if(!standalone) {
     val eq = eventQueue.asInstanceOf[EventQueueCodesign]
@@ -152,11 +149,12 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
 
   // State machine for handling the firing of each event. We allow backpressure from the Reactors.
   // I.e. we will block in sFiring until all reactors are ready to receive the events.
+  // FIXME: Optimize the case when we have zero local triggers.
   val sIdle :: sFire :: Nil = Enum(2)
   val regState = RegInit(sIdle)
   val regExecute = RegInit(EventMode.noEvent)
   val regWasPhysical = RegInit(false.B)
-  val regTriggerFired = RegInit(VecInit(Seq.fill(nTriggers)(false.B)))
+  val regTriggerFired = if (nTriggers > 0 )RegInit(VecInit(Seq.fill(nTriggers)(false.B))) else RegInit(VecInit(Seq.fill(1)(false.B)))
 
   switch (regState) {
     is (sIdle) {

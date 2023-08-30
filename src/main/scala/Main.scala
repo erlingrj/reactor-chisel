@@ -46,7 +46,7 @@ object Settings {
      println("Running Chisel compiler to generate verilator project")
      println("------------------------------------------------------------------------------------------------------")
      val chiselArgs = Array("--target-dir", s"$targetDir")
-     (new chisel3.stage.ChiselStage).emitVerilog(new VerilatedTesterWrapper(_ => new CodesignTopReactor(mainReactorFunc, mainReactorSwIOFunc)(globalConfig), targetDir), chiselArgs)
+     (new chisel3.stage.ChiselStage).emitVerilog(new VerilatedTesterWrapper(p => new CodesignTopReactor(p, mainReactorFunc, mainReactorSwIOFunc)(globalConfig), targetDir), chiselArgs)
      // Copy main cpp file for emulation
      resourceCopyBulk("simulator/codesign", targetDir, Seq("main.cpp", "Makefile"))
      println("------------------------------------------------------------------------------------------------------")

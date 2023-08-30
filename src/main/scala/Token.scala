@@ -17,27 +17,41 @@ class PureToken extends Token[UInt](UInt(0.W)) {
 class SingleToken[T <: Data](gen: T) extends Token(gen) {
   val data = gen
 }
-class ArrayToken[T <: Data](gen:T, val depth: Int) extends Token(gen) {
+class ArrayToken[T <: Data](gen:T, val depth: Long) extends Token(gen) {
   val data = gen
 
   def addrWidth = Math.max(1,log2Ceil(depth))
   def sizeWidth = addrWidth+1
+  def bytesPerToken = gen.getWidth/8
 }
-class FifoToken[T <: Data](gen:T, val depth: Int) extends Token(gen) {
+class FifoToken[T <: Data](gen:T, val depth: Long) extends Token(gen) {
   val data = gen
 }
 
 // Create a separate class hierarchy for SwTokens, i.e. tokens coming from Software reactors
+// Due to ArrayTokens ALWAYS having address as INPUT, we saw the need to split SwToken into Input and Output since we
+// cant just do Input(ArrayToken).
 abstract class SwToken[T <: Data](gen: T) extends Bundle {
-  val present = Bool()
+  val present: Bool
 }
-class SwSingleToken[T <: Data](gen: T) extends SwToken(gen) {
-  val data = gen
+class SwSingleTokenInput[T <: Data](gen: T) extends SwToken(gen) {
+  val present = Input(Bool())
+  val data = Input(gen)
+}
+class SwSingleTokenOutput[T <: Data](gen: T) extends SwToken(gen) {
+  val present = Output(Bool())
+  val data = Output(gen)
 }
 
-class SwArrayToken[T <: Data](gen: T) extends SwToken(gen) {
-  val addr = UInt(32.W) // FIXME: This assumes 32bit shared memory space
-  val size = UInt(32.W)
+class SwArrayTokenInput[T <: Data](gen: T) extends SwToken(gen) {
+  val present = Input(Bool())
+  val addr = Input(UInt(32.W)) // FIXME: This assumes 32bit shared memory space
+  def data = gen
+}
+class SwArrayTokenOutput[T <: Data](gen: T) extends SwToken(gen) {
+  val present = Output(Bool())
+  val addr = Input(UInt(32.W)) // FIXME: This assumes 32bit shared memory space
+  def data = gen
 }
 
 class TokenRdReq[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) extends Bundle {

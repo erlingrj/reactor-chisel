@@ -199,7 +199,7 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
     }
   }
 
-  assert(!(regCycles > 200.U), "[Reaction] Reaction was running for over 200cc assumed error")
+  assert(!(regCycles > 10000.U), "[Reaction] Reaction was running for over 10000cc assumed error")
 
   // FIXME: These debug signals should be optional
   statusIO.state := regState

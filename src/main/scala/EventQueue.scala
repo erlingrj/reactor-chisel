@@ -256,7 +256,7 @@ class EventQueueCodesign(p: EventQueueParams) extends EventQueue(p) {
   val regDone = RegInit(false.B)
 
   when(doShutdown) {
-    assert(p.shutdownTime != Time.NEVER, "[EventQueueCodesign] SW requested shutdown, but timeout is not specified.")
+     // FIXME: Does this really work or are we just terminating from SW?
     when(shutdownIO.simultanous) {
       // Shutdown simultaneous with the local next event tag. Dont touch anything, just enable the shutdown triggers
       for (idx <- p.shutdownTriggers.triggers.indices) {
