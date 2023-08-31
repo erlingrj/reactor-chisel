@@ -256,7 +256,7 @@ class EventQueueCodesign(p: EventQueueParams) extends EventQueue(p) {
   val regDone = RegInit(false.B)
 
   when(doShutdown) {
-    assert(p.shutdownTime != Time.NEVER, "[EventQueueCodesign] SW requested shutdown, but timeout is not specified.")
+     // FIXME: Does this really work or are we just terminating from SW?
     when(shutdownIO.simultanous) {
       // Shutdown simultaneous with the local next event tag. Dont touch anything, just enable the shutdown triggers
       for (idx <- p.shutdownTriggers.triggers.indices) {
@@ -283,12 +283,13 @@ class EventQueueCodesign(p: EventQueueParams) extends EventQueue(p) {
 }
 
 class PhysicalActionEventQueueIO(nPhysicalActions: Int, nTimers: Int) extends Bundle {
-  val phySchedules = Vec(nPhysicalActions, new EventPureWriteSlave)
+  val phySchedules = Vec(nPhysicalActions, new PureTokenWriteSlave)
   val nextEventTag = Decoupled(Tag())
   val triggerVec = Output(Vec(nTimers+nPhysicalActions, Bool()))
 
   def driveDefaults()= {
     triggerVec.foreach(_ := false.B)
+    phySchedules.foreach(_.driveDefaults())
     nextEventTag.valid := false.B
     nextEventTag.bits := 0.U
   }
@@ -314,10 +315,10 @@ class PhysicalActionEventQueue(nPhysicalActions: Int, nTimers: Int) extends Modu
 
     // Current limitation. Only one outstanding physical action
     for ((phy, idx) <- io.phySchedules.zipWithIndex) {
-      phy.ready := !isBusy
+      phy.req.ready := !isBusy
       when(phy.fire) {
         regValids(idx) := true.B
-        regNET := phy.req.token.tag
+        regNET := phy.tag
       }
     }
     when(io.nextEventTag.fire) {
@@ -329,8 +330,8 @@ class PhysicalActionEventQueue(nPhysicalActions: Int, nTimers: Int) extends Modu
 class PhysicalActionConnectorIO(mainIO: ReactorPhysicalIO, extIO: ReactorPhysicalFlippedIO) extends Bundle {
   val main = mainIO
   val ext = extIO
-  val triggers = Vec(ext.getAllPorts.size, new EventPureWriteMaster)
-  val schedules = Vec(ext.getAllPorts.size, new EventPureWriteSlave)
+  val triggers = Vec(ext.getAllPorts.size, new PureTokenWriteMaster)
+  val schedules = Vec(ext.getAllPorts.size, new PureTokenWriteSlave)
 }
 
 
@@ -338,17 +339,17 @@ object PhysicalActionConnector {
   def apply(mainIO: ReactorPhysicalIO, extIO: ReactorPhysicalFlippedIO, triggerGenIO: TriggerGeneratorIO): Unit = {
     for (((main, ext), idx) <- (mainIO.getAllPorts zip extIO.getAllPorts).zipWithIndex) {
       val (connFactory, mainIO, extIO) = (main, ext) match {
-        case (m: EventPureReadMaster, e: EventPureWriteSlave) =>
+        case (m: PureTokenReadMaster, e: PureTokenWriteSlave) =>
           val c = new PureConnectionFactory
           c << e
           c >> m
           (c, m, e)
-        case (m: EventSingleValueReadMaster[Data], e: EventSingleValueWriteSlave[Data]) =>
+        case (m: SingleTokenReadMaster[Data], e: SingleTokenWriteSlave[Data]) =>
           val c = new SingleValueConnectionFactory(e.genData)
           c << e
           c >> m
           (c, m, e)
-        case (m: EventArrayReadMaster[Data], e: EventArrayWriteSlave[Data]) =>
+        case (m: ArrayTokenReadMaster[Data], e: ArrayTokenWriteSlave[Data]) =>
           val c = new ArrayConnectionFactory(e.genData, e.genToken)
           c << e
           c >> m
@@ -359,13 +360,15 @@ object PhysicalActionConnector {
       val trigGenSched = triggerGenIO.phySchedules(idx)
       // Let the TriggerGenerator control when this connection fires and the tag it will be associated with
       conn.head.io.write.fire := trigGenTrigger.fire
-      conn.head.io.write.req.token.asInstanceOf[Token[UInt]].tag := trigGenTrigger.req.token.tag // FIXME: Hacky way of overriding the tag signal so that the TriggerGenerator decides the tag of any Physical Action event
+      conn.head.io.write.absent := trigGenTrigger.absent
+      conn.head.io.write.tag := trigGenTrigger.tag // FIXME: Hacky way of overriding the tag signal so that the TriggerGenerator decides the tag of any Physical Action event
 
-      trigGenTrigger.ready := conn.head.io.write.ready
+      trigGenTrigger.req.ready := conn.head.io.write.req.ready
+      trigGenTrigger.dat.nodeq()
 
       // Connect the fire signal from the top-level IO port to the TriggerGenerator
+      trigGenSched.driveDefaultsFlipped()
       trigGenSched.fire := extIO.fire
-      trigGenSched.req.driveDefaults() // We only need the fire signal.
     }
   }
 }

@@ -1,30 +1,43 @@
 package reactor
 
 import chisel3._
+import chisel3.util._
 
 object ReactionApi {
 
   /**
    * Write data to a normal output port
+   *
    * @param port
    * @param data
    * @param reaction
    * @tparam T1
    * @tparam T2
    */
-  def lf_set[T1 <: Data, T2 <: Token[T1]](port: EventWriteMaster[T1, T2], data: T1)(implicit reaction: Reaction): Unit = {
-    port.write(data)
-    port.req.token.tag := reaction.logicalTag
+  def lf_set[T1 <: Data](port: TokenWriteMaster[T1, SingleToken[T1]], data: T1)(implicit reaction: Reaction): Unit = {
+    port.dat.valid := true.B
+    port.dat.bits.data := data
+    assert(port.dat.ready)
   }
 
-  def lf_set[T1 <: Data, T2 <: Token[T1]](port: EventWriteMaster[T1, T2], addr: Int, data: T1)(implicit reaction: Reaction): Unit = {
-    port.write(data, addr)
-    port.req.token.tag := reaction.logicalTag
-  }
+  // FIXME: It would be nice to not have bits.data I.e. return DecoupledIO[T1] not the ArrayTokenRdResp...
+  def lf_set_array[T1 <: Data](port: ArrayTokenWriteMaster[T1], addr: UInt, size: UInt)(implicit reaction: Reaction): DecoupledIO[TokenWrDat[T1]] = {
+    val sIdle :: sReading :: Nil = Enum(2)
+    val regState = RegInit(sIdle)
 
-  def lf_set[T1 <: Data, T2 <: Token[T1]](port: EventWriteMaster[T1, T2], addr: UInt, data: T1)(implicit reaction: Reaction): Unit = {
-    port.write(data, addr)
-    port.req.token.tag := reaction.logicalTag
+    switch(regState) {
+      is(sIdle) {
+        port.req.bits.addr := addr
+        port.req.bits.size := size
+        port.req.valid := true.B
+
+        when(port.req.fire) {
+          regState := sReading
+        }
+      }
+      is(sReading) {}
+    }
+    port.dat
   }
 
   /**
@@ -37,27 +50,44 @@ object ReactionApi {
   def lf_set[T <: Data](port: StateReadWriteMaster[T, SingleToken[T]], data: T)(implicit reaction: Reaction): Unit = {
     port.write.write(data)
   }
-  def lf_present[T1 <: Data, T2 <: Token[T1]](port: EventReadMaster[T1,T2]): Bool= {
-    port.resp.present
+
+
+  def lf_present[T1 <: Data, T2 <: Token[T1]](port: TokenReadMaster[T1,T2]): Bool= {
+    port.present
   }
 
   /**
    * Get data from a normal input port
+   *
    * @param port
    * @tparam T1
    * @tparam T2
    * @return
    */
-  def lf_get[T1 <: Data, T2 <: Token[T1]](port: EventReadMaster[T1, T2]): T1 = {
-    port.read
+  def lf_get[T1 <: Data](port: TokenReadMaster[T1, SingleToken[T1]]): T1 = {
+    assert(port.token && port.present && port.resp.valid)
+    port.resp.ready := true.B
+    port.resp.bits.data
   }
 
-  def lf_get[T1 <: Data, T2 <: Token[T1]](port: EventReadMaster[T1, T2], addr: Int): T1 = {
-    port.read(addr)
-  }
+  def lf_get_array[T1 <: Data](port: ArrayTokenReadMaster[T1], addr: UInt, size: UInt)(implicit reaction: Reaction): DecoupledIO[TokenRdResp[T1]] = {
 
-  def lf_get[T1 <: Data, T2 <: Token[T1]](port: EventReadMaster[T1, T2], addr: UInt): T1 = {
-    port.read(addr)
+    val sIdle :: sReading :: Nil = Enum(2)
+    val regState = RegInit(sIdle)
+
+    switch(regState) {
+      is(sIdle) {
+        port.req.bits.addr := addr
+        port.req.bits.size := size
+        port.req.valid := true.B
+
+        when(port.req.fire) {
+          regState := sReading
+        }
+      }
+      is(sReading) {}
+    }
+    port.resp
   }
 
   /**

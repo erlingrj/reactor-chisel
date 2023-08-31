@@ -13,8 +13,8 @@ case class ConnectionConfig[T1 <: Data, T2 <: Token[T1]]
 )
 
 abstract class ConnectionIO[T1 <: Data, T2 <: Token[T1]](c: ConnectionConfig[T1,T2]) extends Bundle {
-  val write: EventWriteSlave[T1,T2]
-  val reads: Vec[EventReadSlave[T1,T2]]
+  val write: TokenWriteSlave[T1,T2]
+  val reads: Vec[TokenReadSlave[T1,T2]]
 
   def driveDefaults(): Unit = {
     write.driveDefaults()
@@ -23,18 +23,18 @@ abstract class ConnectionIO[T1 <: Data, T2 <: Token[T1]](c: ConnectionConfig[T1,
 }
 
 class ConnectionSingleValueIO[T1 <: Data](c: ConnectionConfig[T1,SingleToken[T1]]) extends ConnectionIO(c) {
-  val write = new EventSingleValueWriteSlave(c.genData)
-  val reads = Vec(c.nChans, new EventSingleValueReadSlave(c.genData))
+  val write = new SingleTokenWriteSlave(c.genData)
+  val reads = Vec(c.nChans, new SingleTokenReadSlave(c.genData))
 }
 
 class ConnectionPureIO(c: ConnectionConfig[UInt, PureToken]) extends ConnectionIO(c) {
-  val write = new EventPureWriteSlave
-  val reads = Vec(c.nChans, new EventPureReadSlave)
+  val write = new PureTokenWriteSlave
+  val reads = Vec(c.nChans, new PureTokenReadSlave)
 }
 
-class ConnectionArrayIO[T1 <: Data](c: ConnectionConfig[T1,ArrayToken[T1]]) extends ConnectionIO(c) {
-  val write = new EventArrayWriteSlave(c.genData, c.genToken)
-  val reads = Vec(c.nChans, new EventArrayReadSlave(c.genData, c.genToken))
+class ConnectionArrayIO[T <: Data](c: ConnectionConfig[T,ArrayToken[T]]) extends ConnectionIO(c) {
+  val write = new ArrayTokenWriteSlave(c.genData, c.genToken)
+  val reads = Vec(c.nChans, new ArrayTokenReadSlave(c.genData, c.genToken))
 }
 
 abstract class Connection[T1 <: Data, T2 <: Token[T1]](c: ConnectionConfig[T1, T2]) extends Module {
@@ -50,7 +50,7 @@ abstract class Connection[T1 <: Data, T2 <: Token[T1]](c: ConnectionConfig[T1, T
   val sIdle :: sToken :: Nil = Enum(2)
   val regState = RegInit(sIdle)
 
-  val regTokens = RegInit(VecInit(Seq.fill(numReadChannels)(false.B)))
+  val regTokens = RegInit(VecInit(Seq.fill(numReadChannels)(false.B))) // Presence of token (including absent tokens)
   val regTag = RegInit(0.U(64.W))
   val done = WireDefault(false.B)
 
@@ -58,12 +58,11 @@ abstract class Connection[T1 <: Data, T2 <: Token[T1]](c: ConnectionConfig[T1, T
     io.driveDefaults()
     switch(regState) {
       is(sIdle) {
-        io.write.ready := true.B
-        when(io.write.req.valid) {
-          regTag := io.write.req.token.tag
-        }
+        // Idling, waiting for the writing side of the connection to fire
+        io.write.req.ready := true.B
 
         when(io.write.fire) {
+          regTag := io.write.tag
           regState := sToken
           // Note that we use c.nChans here and not numReadChannels. In case c.nChans == 0
           for (i <- 0 until c.nChans) {
@@ -74,8 +73,9 @@ abstract class Connection[T1 <: Data, T2 <: Token[T1]](c: ConnectionConfig[T1, T
 
       is(sToken) {
         for (i <- 0 until c.nChans) {
-          io.reads(i).resp.valid := regTokens(i)
-          io.reads(i).resp.token.tag := regTag
+          io.reads(i).req.ready := regTokens(i)
+          io.reads(i).token := regTokens(i)
+          io.reads(i).tag := regTag
           when(io.reads(i).fire) {
             regTokens(i) := false.B
           }
@@ -100,7 +100,8 @@ class PureConnection(c : ConnectionConfig[UInt,PureToken]) extends Connection(c)
   switch (regState) {
     is (sIdle) {
      when (io.write.fire) {
-       regPresent.foreach(_ := io.write.req.present)
+       assert(io.write.absent || io.write.req.valid)
+       regPresent.foreach(_ := io.write.req.valid)
      }
     }
     is (sToken) {
@@ -108,7 +109,7 @@ class PureConnection(c : ConnectionConfig[UInt,PureToken]) extends Connection(c)
         when (io.reads(i).fire) {
           regPresent(i) := false.B
         }
-        io.reads(i).resp.present := regPresent(i)
+        io.reads(i).present := regPresent(i)
       }
     }
   }
@@ -123,15 +124,17 @@ class SingleValueConnection[T <: Data](c: ConnectionConfig[T, SingleToken[T]]) e
 
   switch(regState) {
     is (sIdle) {
-      when (io.write.req.valid && io.write.req.present) {
-        data := io.write.req.token.data
+      io.write.dat.ready := true.B
+      when (io.write.dat.fire) {
+        data := io.write.dat.bits.data
         present := true.B
       }
     }
     is (sToken) {
       for (i <- 0 until c.nChans) {
-        io.reads(i).resp.present := present && !done
-        io.reads(i).resp.token.data := data
+        io.reads(i).present := present && !done && regTokens(i)
+        io.reads(i).resp.bits.data := data
+        io.reads(i).resp.valid := present && !done && regTokens(i)
       }
 
       when (done) {
@@ -150,19 +153,75 @@ class ArrayConnection[T <: Data](c: ConnectionConfig[T, ArrayToken[T]]) extends 
   val present = RegInit(false.B)
   val tag = RegInit(Tag(0))
 
+  val regIsWriting = RegInit(false.B)
+  val regWrAddr = RegInit(0.U(c.genToken.addrWidth.W))
+  val regWrSize = RegInit(0.U((c.genToken.sizeWidth).W))
+  val regWrCnt = RegInit(0.U((c.genToken.sizeWidth).W))
+
+//  printf("addr %d cnt %d size %d\n", regWrAddr, regWrCnt, regWrSize)
   switch(regState) {
     is(sIdle) {
-      when(io.write.req.valid && io.write.req.present) {
-        data.foreach(_.write(io.write.req.addr, io.write.req.token.data))
-        tag := io.write.req.token.tag
-        present := true.B
+      when(!regIsWriting) {
+        io.write.req.ready := true.B
+        io.write.dat.ready := false.B
+        when(io.write.req.fire) {
+          present := true.B
+          regWrAddr := io.write.req.bits.addr
+          regWrSize := io.write.req.bits.size
+          regWrCnt := 0.U
+          regIsWriting := true.B
+        }
+      }.otherwise {
+        io.write.dat.ready := true.B
+        val doneWriting = WireDefault(false.B)
+        when(io.write.dat.fire) {
+          data.foreach(_.write(regWrAddr, io.write.dat.bits.data))
+          regWrAddr := regWrAddr + 1.U
+          regWrCnt := regWrCnt + 1.U
+          when(regWrCnt === regWrSize - 1.U) {
+            regIsWriting := false.B
+            doneWriting := true.B
+          }
+        }
+        assert(!(io.write.fire && !doneWriting), "[Connection] Fired before all writes requested were performed")
       }
     }
     is(sToken) {
       for (i <- 0 until c.nChans) {
-        io.reads(i).resp.present := present && !done
-        io.reads(i).resp.token.data := data(i).read(io.reads(i).asTypeOf(new EventArrayReadSlave(c.genData, c.genToken)).req.addr)
-        io.reads(i).resp.token.tag := tag
+        io.reads(i).present := present && !done
+        val regIsReading = RegInit(false.B)
+        val regMemRespValid = RegInit(false.B)
+        val regRdAddr = RegInit(0.U(c.genToken.addrWidth.W))
+        val regRdSize = RegInit(0.U((c.genToken.sizeWidth.W))) // + 1 since we have to
+        val regRdCnt = RegInit(0.U((c.genToken.sizeWidth).W))
+        val doneReading = WireDefault(false.B)
+        when(!regIsReading) {
+          io.reads(i).req.ready := true.B
+          io.reads(i).resp.valid := false.B
+          when(io.reads(i).req.fire) {
+            regIsReading := true.B
+            regMemRespValid := false.B
+            regRdAddr := io.reads(i).req.bits.asTypeOf(new ArrayTokenRdReq(c.genData, c.genToken)).addr
+            regRdSize := io.reads(i).req.bits.asTypeOf(new ArrayTokenRdReq(c.genData, c.genToken)).size
+            regRdCnt := 0.U
+          }
+        }.otherwise {
+          val readResp = data(i).read(regRdAddr)
+          regMemRespValid := true.B
+
+          io.reads(i).resp.valid := regMemRespValid
+          io.reads(i).resp.bits.data := readResp
+
+          when(io.reads(i).resp.fire || !regMemRespValid) {
+            regRdAddr := regRdAddr + 1.U
+            regRdCnt := regRdCnt + 1.U
+            when(regRdCnt === regRdSize) {
+              regIsReading := false.B
+              doneReading := true.B
+            }
+          }
+          assert(!(io.reads(i).fire && !doneReading), "[Connection] Fired before all reads requested were accepted")
+        }
       }
 
       when(done) {
@@ -178,25 +237,25 @@ class ConnectionFactory[T1 <: Data, T2 <: Token[T1], T3 <: Connection[T1, T2]](
                                                                               genToken: T2,
                                                                 genFunc: ConnectionConfig[T1,T2] => T3,
                                                                 ) extends CircuitFactory {
-  var upstream: EventWriter[T1,T2] = null
-  var downstreams: ArrayBuffer[Seq[EventReader[T1,T2]]] = ArrayBuffer()
-  def addUpstream(up: EventWriter[T1,T2]): Unit = {
+  var upstream: TokenWriter[T1,T2] = null
+  var downstreams: ArrayBuffer[Seq[TokenReader[T1,T2]]] = ArrayBuffer()
+  def addUpstream(up: TokenWriter[T1,T2]): Unit = {
     require(upstream == null, "addUpstream called twice")
     upstream = up
   }
-  def addDownstream(down: Seq[EventReader[T1,T2]]): Unit = {
+  def addDownstream(down: Seq[TokenReader[T1,T2]]): Unit = {
     downstreams += down
   }
-  def >>(down: EventReader[T1,T2]): Unit = {
+  def >>(down: TokenReader[T1,T2]): Unit = {
     addDownstream(Seq(down))
   }
 
-  def >>(down: Seq[EventReader[T1, T2]]): Unit = {
+  def >>(down: Seq[TokenReader[T1, T2]]): Unit = {
     addDownstream(down)
   }
 
 
-  def <<(up: EventWriter[T1, T2]): Unit = {
+  def <<(up: TokenWriter[T1, T2]): Unit = {
     addUpstream(up)
   }
 

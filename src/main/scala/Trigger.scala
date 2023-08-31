@@ -28,17 +28,17 @@ class TimerCoordinationIO extends Bundle {
 
 class TriggerPureVirtual(val cfg: TriggerConfig) {
 
-  var triggeredReactions: ArrayBuffer[EventPureReadMaster] = ArrayBuffer()
-  var inputTimerPort: EventPureWriteSlave = null;
+  var triggeredReactions: ArrayBuffer[PureTokenReadMaster] = ArrayBuffer()
+  var inputTimerPort: PureTokenWriteSlave = null;
 
   // Declare that this virtual timer triggers reaction `r`
-  def declareTriggeredReaction(r: EventPureReadMaster): Unit = {
+  def declareTriggeredReaction(r: PureTokenReadMaster): Unit = {
     triggeredReactions += r
   }
 
   // Declare that this virtual timer is driven by the timer input port `in`. This port
   // is eventually connected to the top-level timer module
-  def declareInputPort(in: EventPureWriteSlave): Unit = {
+  def declareInputPort(in: PureTokenWriteSlave): Unit = {
     inputTimerPort = in
   }
 

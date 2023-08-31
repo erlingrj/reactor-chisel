@@ -62,8 +62,8 @@ class ExecuteIO extends Bundle {
 }
 
 class TriggerGeneratorIO(nTimers: Int, nPhys: Int) extends Bundle {
-  val timerTriggers = Vec(nTimers, new EventPureWriteMaster())
-  val phyTriggers = Vec(nPhys, new EventPureWriteMaster())
+  val timerTriggers = Vec(nTimers, new PureTokenWriteMaster())
+  val phyTriggers = Vec(nPhys, new PureTokenWriteMaster())
   val nextEventTag = Output(Tag())
   val tagAdvanceGrant = Input(Tag())
   val shutdownCommand = Input(new ShutdownCommand) // External request for termination at TAG
@@ -72,7 +72,7 @@ class TriggerGeneratorIO(nTimers: Int, nPhys: Int) extends Bundle {
 
   val inputPresent = Input(Bool())
   val terminate = Output(Bool())
-  val phySchedules = Vec(nPhys, new EventPureWriteSlave())
+  val phySchedules = Vec(nPhys, new PureTokenWriteSlave())
 
   def driveDefaults() = {
     timerTriggers.foreach(_.driveDefaults())
@@ -114,18 +114,15 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
   io.terminate := eventQueue.io.terminate
   io.nextEventTag := eventQueue.io.nextEventTag
 
-
   val phyEventQueue = Module(new PhysicalActionEventQueue(nPhys, nTimers))
   phyEventQueue.io.nextEventTag.ready := false.B
   // Route the scheduling of physical actions out
   phyEventQueue.io.phySchedules zip io.phySchedules foreach {f => f._1 <> f._2}
 
   // Drive the tag signal here, from the clock. A physical action gets the current time as its tag.
-  phyEventQueue.io.phySchedules.foreach(_.req.token.tag := mainClock.now)
+  phyEventQueue.io.phySchedules.foreach(_.tag := mainClock.now)
   val eventQPick = eventQueue.io.nextEventTag < phyEventQueue.io.nextEventTag.bits || !phyEventQueue.io.nextEventTag.valid
   val nextEventTag = Mux(eventQPick, eventQueue.io.nextEventTag, phyEventQueue.io.nextEventTag.bits)
-
-
 
   if(!standalone) {
     val eq = eventQueue.asInstanceOf[EventQueueCodesign]
@@ -152,11 +149,13 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
 
   // State machine for handling the firing of each event. We allow backpressure from the Reactors.
   // I.e. we will block in sFiring until all reactors are ready to receive the events.
+  // FIXME: Optimize the case when we have zero local triggers.
   val sIdle :: sFire :: Nil = Enum(2)
   val regState = RegInit(sIdle)
   val regExecute = RegInit(EventMode.noEvent)
   val regWasPhysical = RegInit(false.B)
-  val regTriggerFired = RegInit(VecInit(Seq.fill(nTriggers)(false.B)))
+  val regTriggerFired = if (nTriggers > 0 )Some(RegInit(VecInit(Seq.fill(nTriggers)(false.B)))) else None
+
 
   switch (regState) {
     is (sIdle) {
@@ -172,40 +171,49 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
     // backpressure. This implies that we might be backpressured for a long enough time so that we lose events.
     is (sFire) {
       scheduler.execute.ready := false.B
-      // Drive all output trigger signals:
-      val triggers = io.timerTriggers ++ io.phyTriggers
-      for ((t, i) <- triggers.zipWithIndex) {
-        when(!regTriggerFired(i)) {
-          when(t.ready) {
-            when(EventMode.hasLocalEvent(regExecute.asUInt)) {
-              t.req.valid := true.B
-              t.fire := true.B
-              when (regWasPhysical) {
-                t.req.present := phyEventQueue.io.triggerVec(i)
-                t.req.token.tag := phyEventQueue.io.nextEventTag.bits
-              }.otherwise {
-                t.req.present := eventQueue.io.triggerVec(i)
-                t.req.token.tag := eventQueue.io.nextEventTag
+      // If we have local triggers on the FPGA, then we allow them to backpressure. If no local triggers. Then
+      // we are essentially always in the Codesign situation. Then backpressure is implemented by the LTC signal.
+      if (nTriggers > 0) {
+        // Drive all output trigger signals:
+        val triggers = io.timerTriggers ++ io.phyTriggers
+        for ((t, i) <- triggers.zipWithIndex) {
+          when(!regTriggerFired.get(i)) {
+            when(t.req.ready) {
+              when(EventMode.hasLocalEvent(regExecute.asUInt)) {
+                t.fire := true.B
+                when(regWasPhysical) {
+                  val present = phyEventQueue.io.triggerVec(i)
+                  t.req.valid := present
+                  t.absent := !present
+                  t.tag := phyEventQueue.io.nextEventTag.bits
+                }.otherwise {
+                  val present = eventQueue.io.triggerVec(i)
+                  t.req.valid := present
+                  t.absent := !present
+                  t.tag := eventQueue.io.nextEventTag
+                }
+              }.elsewhen(EventMode.hasExternalEvent(regExecute.asUInt)) {
+                t.writeAbsent()
               }
-            }.elsewhen(EventMode.hasExternalEvent(regExecute.asUInt)) {
-              t.writeAbsent()
+              regTriggerFired.get(i) := true.B
             }
-            regTriggerFired(i) := true.B
           }
         }
-      }
 
-      // Check that all events have been fired. If so, go back to accepting new events.
-      when (regTriggerFired.asUInt.andR) {
-        when(EventMode.hasLocalEvent(regExecute.asUInt)) {
-          when (regWasPhysical) {
-            phyEventQueue.io.nextEventTag.ready := true.B
-          }.otherwise {
-            eventQueue.io.step := true.B
+        // Check that all events have been fired. If so, go back to accepting new events.
+        when(regTriggerFired.get.asUInt.andR) {
+          when(EventMode.hasLocalEvent(regExecute.asUInt)) {
+            when(regWasPhysical) {
+              phyEventQueue.io.nextEventTag.ready := true.B
+            }.otherwise {
+              eventQueue.io.step := true.B
+            }
           }
+          regState := sIdle
+          regTriggerFired.get.foreach(_ := false.B)
         }
+      } else {
         regState := sIdle
-        regTriggerFired.foreach(_ := false.B)
       }
     }
   }
