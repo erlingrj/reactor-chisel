@@ -210,7 +210,7 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
             }
           }
           regState := sIdle
-          regTriggerFired.foreach(_ := false.B)
+          regTriggerFired.get.foreach(_ := false.B)
         }
       } else {
         regState := sIdle
