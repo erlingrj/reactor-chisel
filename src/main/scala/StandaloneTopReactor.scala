@@ -5,21 +5,23 @@ class StandaloneTopReactorIO extends Bundle {
   val terminate = Output(Bool())
 }
 
-class StandaloneTopReactor(mainReactorGenFunc: () => Reactor)(implicit globalCfg: GlobalReactorConfig) extends Module {
+class StandaloneTopReactor(mainReactorGenFunc: () => Reactor)(implicit val globalCfg: GlobalReactorConfig) extends Module {
   val mainReactor = Module(mainReactorGenFunc())
   val io = IO(new StandaloneTopReactorIO)
   val externalIO = IO(mainReactor.externalIO.cloneType)
   val physicalIO = IO(new ReactorPhysicalFlippedIO(mainReactor.physicalIO.cloneType))
   externalIO <> mainReactor.externalIO
 
-  val trigGen = Module(new TriggerGenerator(true, globalCfg.timeout, mainReactor))
+  val trigGen = Module(new TriggerGenerator(mainReactor))
 
   // Connect external physical IO, TriggerGenerator and physical IO on the main Reactor
   PhysicalActionConnector(mainReactor.physicalIO, physicalIO, trigGen.io)
 
   // Connect the triggerGenerator to the mainReactor
   for (i <- mainReactor.triggerIO.allTimerTriggers.indices) {
-    mainReactor.triggerIO.allTimerTriggers(i) <> trigGen.io.timerTriggers(i)
+    val fifo = Module(new PureTokenQueue(32)).io // FIXME: Make configurable the number of fifo elements.
+    trigGen.io.timerTriggers(i) <> fifo.enq
+    fifo.deq <> mainReactor.triggerIO.allTimerTriggers(i)
   }
 
   trigGen.io.inputPresent := false.B

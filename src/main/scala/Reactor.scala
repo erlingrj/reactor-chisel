@@ -19,7 +19,8 @@ package object globals {
 
 }
 case class GlobalReactorConfig(
-                              timeout: Time
+                              timeout: Time,
+                              standalone: Boolean,
                               )
 
 abstract class ReactorIO extends Bundle {
@@ -128,7 +129,8 @@ abstract class Reactor extends Module {
   // Is the current Reactor (and any contained reactor idle?)
   def isIdle(): Bool = {
     ( childReactors.map(_.statusIO.idle) ++
-      inPorts.map(!_.io.outward.token)
+      inPorts.map(!_.io.outward.token) ++
+      triggerIO.localTimerTriggers.map(!_.req.valid)
       ).reduceOption(_ && _).getOrElse(true.B)
   }
 

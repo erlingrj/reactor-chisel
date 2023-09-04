@@ -102,7 +102,7 @@ class LtcHandler(nOutputs: Int) extends Module {
 
 
 class CodesignTopReactor(p: PlatformWrapperParams, mainReactorGen: () => Reactor, swIOGen: () => SwIO)
-  (implicit globalCfg: GlobalReactorConfig) extends GenericAccelerator(p) {
+  (implicit val globalCfg: GlobalReactorConfig) extends GenericAccelerator(p) {
   def numMemPorts = 1
 
   val io = IO(new CodesignTopReactorIO(p, swIOGen))
@@ -117,7 +117,7 @@ class CodesignTopReactor(p: PlatformWrapperParams, mainReactorGen: () => Reactor
   val externalIO = IO(mainReactor.externalIO.cloneType)
   externalIO <> mainReactor.externalIO
 
-  val triggerGen = Module(new TriggerGenerator(false, globalCfg.timeout, mainReactor))
+  val triggerGen = Module(new TriggerGenerator(mainReactor))
   val physicalIO = IO(new ReactorPhysicalFlippedIO(mainReactor.physicalIO.cloneType))
 
   // Connect external physical IO, TriggerGenerator and physical IO on the main Reactor

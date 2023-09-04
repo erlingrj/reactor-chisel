@@ -110,6 +110,8 @@ object Schedule {
  */
 case class EventQueueParams(
     nLocalTriggers: Int,
+  nTimers: Int,
+  nPhyActions: Int,
     hyperPeriod: Time,
     shutdownTime: Time,
     shutdownTriggers: ScheduleElement,
@@ -121,21 +123,22 @@ case class EventQueueParams(
   def scheduleWidth = nLocalTriggers
   def scheduleWidthBits = Math.max(log2Ceil(scheduleWidth), 1)
 
+  require(nLocalTriggers == (nTimers + nPhyActions))
   require(nLocalTriggers == shutdownTriggers.triggers.size, "[EventQueue] Mismatch between nLocalTriggers and the widths of the schedules")
 }
 
 class EventQueueIO(p: EventQueueParams) extends Bundle {
-  val nextEventTag = Output(Tag())
+  val nextEventTag = Decoupled(Tag())
   val triggerVec = Vec(p.scheduleWidth, Output(Bool()))
-  val step = Input(Bool())
   val terminate = Output(Bool())
 
 
   def driveDefaultsFlipped(): Unit = {
-    step := false.B
+    nextEventTag.ready := false.B
   }
   def driveDefaults(): Unit  = {
-    nextEventTag := Tag.NEVER
+    nextEventTag.bits := Tag.NEVER
+    nextEventTag.valid := false.B
     terminate := false.B
     triggerVec.map(_ := false.B)
   }
@@ -155,14 +158,17 @@ class EventQueue(p: EventQueueParams) extends Module {
   val io = IO(new EventQueueIO(p))
   io.driveDefaults()
 
-  val nextLocalEvent = WireDefault(Tag.NEVER)
-  io.nextEventTag := nextLocalEvent
+  val regNET = RegInit(Tag.NEVER)
+  val regNETValid = RegInit(false.B)
+
+  io.nextEventTag.bits := regNET
+  io.nextEventTag.valid := regNETValid
 
   // Only bother with the event queue if we actually have locally originating events.
   if (p.scheduleLength > 0) {
     val initialRound = RegInit(true.B)
 
-    val idx = RegInit(0.U(p.scheduleLengthBits.W))
+    val regIdx = RegInit(0.U(p.scheduleLengthBits.W))
     val triggerVecInital = RegInit(VecInit(Seq.tabulate(p.initialSchedule.length) { i =>
       VecInit(Seq.tabulate(p.initialSchedule(0).triggers.size) { j =>
         p.initialSchedule(i).triggers(j).B
@@ -175,47 +181,81 @@ class EventQueue(p: EventQueueParams) extends Module {
       })
     }))
 
-    val tags = RegInit(VecInit(Seq.tabulate(p.initialSchedule.size) { i => Tag(p.initialSchedule(i).tag) }))
-    val epoch = RegInit(Tag(0))
-    nextLocalEvent := tags(idx) + epoch
-
     // Do first the initial round. Then the periodic (if we have one)
     when(initialRound) {
-      for ((triggerIO, trigger) <- io.triggerVec zip triggerVecInital(idx)) {
+      for ((triggerIO, trigger) <- io.triggerVec zip triggerVecInital(regIdx)) {
         triggerIO := trigger
       }
     }.otherwise {
       if (p.hyperPeriod > 0) {
-        for ((triggerIO, trigger) <- io.triggerVec zip triggerVecPeriodic(idx)) {
+        for ((triggerIO, trigger) <- io.triggerVec zip triggerVecPeriodic(regIdx)) {
           triggerIO := trigger
         }
-      } else {
-        nextLocalEvent := Tag.FOREVER
+      }
+    }
+    val tags = RegInit(VecInit(Seq.tabulate(p.initialSchedule.size) { i => Tag(p.initialSchedule(i).tag) }))
+    val regEpoch = RegInit(Tag(0))
+
+    val sIdle :: sStep1 :: sStep2 :: Nil = Enum(3)
+    val regState = RegInit(sStep2) // Initialize to step2 were we compute the NET
+
+
+    switch (regState) {
+      is (sIdle) {
+        when(io.nextEventTag.fire) {
+          regState := sStep1
+          regNETValid := false.B
+        }
+      }
+
+      is (sStep1) {
+        regIdx := regIdx + 1.U
+
+        when(regIdx === (p.scheduleLength - 1).U) {
+          // After first wrap, we start using the periodic schedule
+          initialRound := false.B
+          regIdx := 0.U
+          regEpoch := regEpoch + p.hyperPeriod.ticks.U
+        }
+        regState := sStep2
+      }
+
+      is (sStep2) {
+        regNETValid := true.B
+
+        // In the special case that we dont have a hyperperiod. I.e. there arent any periodic triggers on the FPGA
+        //  then we set the NEVER tag as the NET
+        if (p.hyperPeriod == 0) {
+         when (initialRound) {
+           regNET := tags(regIdx) + regEpoch
+         }.otherwise {
+           regNET := Tag.NEVER
+         }
+        } else {
+          regNET := tags(regIdx) + regEpoch
+        }
+
+        regState := sIdle
       }
     }
 
-    when(io.step) {
-      idx := idx + 1.U
-      when(idx === (p.scheduleLength - 1).U) {
-        // After first wrap, we start using the periodic schedule
-        initialRound := false.B
-        idx := 0.U
-        epoch := epoch + p.hyperPeriod.ticks.U
-      }
-    }
   } else {
     println("Empty schedule. Only compiling a shell for the EventQueue")
+    regNETValid := true.B
+    regNET := Tag.NEVER
   }
+
+  assert(!(io.nextEventTag.bits === Tag.NEVER && io.nextEventTag.fire))
+  assert(!(io.nextEventTag.ready && !io.nextEventTag.valid))
 }
 
 class EventQueueStandalone(p: EventQueueParams) extends EventQueue(p) {
   if (p.shutdownTime != Time.NEVER) {
     val regDone = RegInit(false.B)
 
-    when(nextLocalEvent >= p.shutdownTime.ticks.U) {
-      io.nextEventTag := p.shutdownTime.ticks.U
-
-      when (nextLocalEvent > p.shutdownTime.ticks.U) {
+    when(regNETValid && (regNET>= p.shutdownTime.ticks.U)) {
+      io.nextEventTag.bits := p.shutdownTime.ticks.U
+      when (regNETValid && regNET > p.shutdownTime.ticks.U) {
         // We have a shutdown trigger at an independent tag. Only trigger shutdown reactions
         for ((triggerIO, trigger) <- io.triggerVec zip p.shutdownTriggers.triggers) {
           triggerIO := trigger.B
@@ -230,55 +270,54 @@ class EventQueueStandalone(p: EventQueueParams) extends EventQueue(p) {
         }
       }
       // Wait for acceptance of this event
-      when(io.step) {
+      when(io.nextEventTag.fire) {
         regDone := true.B
       }
     }
 
     // Set next NET to NEVER and suggest termination
     when(regDone) {
-      io.nextEventTag := Tag.NEVER
+      io.nextEventTag.bits := Tag.NEVER
+      io.nextEventTag.valid := false.B
       io.terminate := true.B
     }
-    assert(!(io.step && regDone))
+    assert(!(io.nextEventTag.fire && regDone))
   }
 }
 
 
 class EventQueueCodesign(p: EventQueueParams) extends EventQueue(p) {
-  val shutdownIO = IO(new Bundle {
-    val simultanous = Input(Bool())
-    val independent = Input(Bool())
-    val independentTag = Input(Tag())
-  })
+  val shutdownIO = IO(new ShutdownCommand())
+  val tagIO = IO(Input(Tag()))
 
-  def doShutdown = shutdownIO.simultanous || shutdownIO.independent
+  def doShutdown = shutdownIO.valid
   val regDone = RegInit(false.B)
 
   when(doShutdown) {
      // FIXME: Does this really work or are we just terminating from SW?
-    when(shutdownIO.simultanous) {
+    when(!shutdownIO.independent) {
       // Shutdown simultaneous with the local next event tag. Dont touch anything, just enable the shutdown triggers
       for (idx <- p.shutdownTriggers.triggers.indices) {
         if (p.shutdownTriggers.triggers(idx)) {
           io.triggerVec(idx) := true.B
         }
       }
-    }.elsewhen(shutdownIO.independent) {
+    }.otherwise {
       // We do shutdown at an independent tag.
-      io.nextEventTag := shutdownIO.independentTag
+      io.nextEventTag.bits := tagIO
       for ((triggerIO, trigger) <- io.triggerVec zip p.shutdownTriggers.triggers) {
         triggerIO := trigger.B
       }
     }
-    when(io.step) {
+    when(io.nextEventTag.fire) {
       regDone := true.B
     }
   }
 
   when(regDone) {
     io.terminate := true.B
-    io.nextEventTag := Tag.FOREVER
+    io.nextEventTag.valid := false.B
+    io.nextEventTag.bits := Tag.FOREVER
   }
 }
 
@@ -293,15 +332,19 @@ class PhysicalActionEventQueueIO(nPhysicalActions: Int, nTimers: Int) extends Bu
     nextEventTag.valid := false.B
     nextEventTag.bits := 0.U
   }
+
+  def driveDefaultsFlipped() = {
+    nextEventTag.nodeq()
+  }
 }
 
-class PhysicalActionEventQueue(nPhysicalActions: Int, nTimers: Int) extends Module {
-  val io = IO(new PhysicalActionEventQueueIO(nPhysicalActions, nTimers))
+class PhysicalActionEventQueue(p: EventQueueParams) extends Module {
+  val io = IO(new PhysicalActionEventQueueIO(p.nPhyActions, p.nTimers))
   io.driveDefaults()
 
-  if(nPhysicalActions > 0) {
+  if(p.nPhyActions > 0) {
     val regNET = RegInit(0.U.asTypeOf(Tag()))
-    val regValids = RegInit(VecInit(Seq.fill(nPhysicalActions)(false.B)))
+    val regValids = RegInit(VecInit(Seq.fill(p.nPhyActions)(false.B)))
 
     def isBusy = regValids.asUInt.orR
 
@@ -309,8 +352,8 @@ class PhysicalActionEventQueue(nPhysicalActions: Int, nTimers: Int) extends Modu
     io.nextEventTag.bits := regNET
 
     // TriggerVec is prepended with the timer triggers which are all absent. (0.U(ntimers.W))
-    for (i <- 0 until nPhysicalActions) {
-      io.triggerVec(i + nTimers) := regValids(i)
+    for (i <- 0 until p.nPhyActions) {
+      io.triggerVec(i + p.nTimers) := regValids(i)
     }
 
     // Current limitation. Only one outstanding physical action
@@ -369,6 +412,92 @@ object PhysicalActionConnector {
       // Connect the fire signal from the top-level IO port to the TriggerGenerator
       trigGenSched.driveDefaultsFlipped()
       trigGenSched.fire := extIO.fire
+    }
+  }
+}
+
+class EventQueueMuxIO(p: EventQueueParams) extends Bundle {
+  val nextEventTag = Decoupled(Tag())
+  val triggerVec = Vec(p.scheduleWidth, Output(Bool()))
+  val terminate = Output(Bool())
+  val tagAdvanceGrant = Input(Tag())
+  val shutdownCmd = Input(new ShutdownCommand)
+  val phySchedules = Vec(p.nPhyActions, new PureTokenWriteSlave)
+
+  def driveDefaults() = {
+    nextEventTag.noenq()
+    triggerVec.foreach(_ := false.B)
+    terminate := false.B
+  }
+
+  def driveDefaultsFlipped() = {
+    nextEventTag.nodeq()
+    tagAdvanceGrant := 0.U
+    shutdownCmd := 0.U.asTypeOf(new ShutdownCommand)
+    phySchedules.foreach(_.driveDefaultsFlipped())
+  }
+}
+
+class EventQueueMux(p: EventQueueParams)(implicit val cfg: GlobalReactorConfig) extends Module {
+  val io = IO(new EventQueueMuxIO(p))
+  io.driveDefaults()
+
+
+  val localEventQ = {
+    if (cfg.standalone) Module(new EventQueueStandalone((p)))
+    else {
+      val eq = Module(new EventQueueCodesign(p))
+      eq.shutdownIO := io.shutdownCmd
+      eq.tagIO := io.tagAdvanceGrant
+      eq
+    }
+  }
+  localEventQ.io.driveDefaultsFlipped()
+  val physicalEventQ = if (p.nPhyActions > 0) Some(Module(new PhysicalActionEventQueue(p))) else None
+
+  io.terminate := localEventQ.io.terminate
+
+  if (!physicalEventQ.isDefined) {
+    io.triggerVec := localEventQ.io.triggerVec
+    io.nextEventTag <> localEventQ.io.nextEventTag
+  } else {
+    val phyEventQ = physicalEventQ.get
+    phyEventQ.io.driveDefaultsFlipped()
+    phyEventQ.io.phySchedules zip io.phySchedules foreach {f => f._1 <> f._2}
+
+    val sComputeNet1 :: sWaitForLocal :: sWaitForExe :: Nil = Enum(3)
+    val regState = RegInit(sComputeNet1)
+    val regEventQPick = RegInit(false.B)
+
+    switch(regState) {
+      is (sComputeNet1) {
+        regEventQPick := !phyEventQ.io.nextEventTag.valid || localEventQ.io.nextEventTag.bits < phyEventQ.io.nextEventTag.bits
+        regState := sWaitForExe
+      }
+
+      is (sWaitForLocal) {
+        when (localEventQ.io.nextEventTag.valid) {
+          regState := sComputeNet1
+        }
+      }
+
+      is (sWaitForExe) {
+        when(regEventQPick) {
+          io.nextEventTag <> localEventQ.io.nextEventTag
+          io.triggerVec := localEventQ.io.triggerVec
+        }.otherwise {
+          io.nextEventTag <> phyEventQ.io.nextEventTag
+          io.triggerVec := phyEventQ.io.triggerVec
+        }
+      }
+    }
+
+    when(phyEventQ.io.nextEventTag.valid && RegNext(phyEventQ.io.nextEventTag.valid)) {
+      regState := sComputeNet1
+    }
+
+    when(!localEventQ.io.nextEventTag.valid) {
+      regState := sWaitForLocal
     }
   }
 }
