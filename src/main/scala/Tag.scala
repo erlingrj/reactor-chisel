@@ -4,11 +4,11 @@ import chisel3._
 object Tag {
   // FIXME: This requires 32 bit tag width. Is it a dangerous route?
   def FOREVER: UInt = {
-    Int.MaxValue.U(width.W)
+    Long.MaxValue.U(width.W)
   }
 
   def NEVER: UInt = {
-    Int.MinValue.S(width.W).asUInt
+    Long.MinValue.S(width.W).asUInt
   }
 
   def apply(): UInt = UInt(width.W)
@@ -25,5 +25,5 @@ object Tag {
     initialValue.ticks.U
   }
 
-  def width: Int = 32
+  def width: Int = 64
 }

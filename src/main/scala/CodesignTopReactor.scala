@@ -70,32 +70,54 @@ class LtcHandlerIO(nOutputs: Int) extends Bundle {
   val outputFires = Vec(nOutputs, Input(Bool()))
   val execute = Flipped(Valid(new ExecuteIO))
   val logicalTagComplete = Output(Tag())
+  val inputPortsReady = Input(Bool())
 }
 
 class LtcHandler(nOutputs: Int) extends Module {
-  require(nOutputs > 0, "[LtcHandler] Does not support FPGA reactors without any outpits")
   val io = IO(new LtcHandlerIO(nOutputs))
 
-  val regCurrentlyExecutingTag = RegInit(Tag(0))
   val regLogicalTagComplete = RegInit(Tag.NEVER)
-  val regOutputsFired = RegInit(VecInit(Seq.fill(nOutputs)(false.B)))
-
+  val regCurrentlyExecutingTag = RegInit(Tag(0))
   io.logicalTagComplete := regLogicalTagComplete
-  for ((oFired, reg) <- io.outputFires zip regOutputsFired) {
-    when (oFired) {
-      assert(reg === false.B, "[LtcHandler] output fired. But it was already marked as fired")
-      reg := true.B
+
+  if (nOutputs > 0) {
+    val regOutputsFired = RegInit(VecInit(Seq.fill(nOutputs)(false.B)))
+
+    for ((oFired, reg) <- io.outputFires zip regOutputsFired) {
+      when(oFired) {
+        assert(reg === false.B, "[LtcHandler] output fired. But it was already marked as fired")
+        reg := true.B
+      }
     }
-  }
 
-  when(regOutputsFired.asUInt.andR) {
-    regLogicalTagComplete := regCurrentlyExecutingTag
-    regOutputsFired.foreach(_ := false.B)
-  }
+    when(regOutputsFired.asUInt.andR) {
+      regLogicalTagComplete := regCurrentlyExecutingTag
+      regOutputsFired.foreach(_ := false.B)
+    }
 
-  when(io.execute.valid) {
-    assert(!regOutputsFired.asUInt.orR, "[LtcHandler] We started executing a new tag before the previous ended")
-    regCurrentlyExecutingTag := io.execute.bits.tag
+    when(io.execute.valid) {
+      assert(!regOutputsFired.asUInt.orR, "[LtcHandler] We started executing a new tag before the previous ended")
+      regCurrentlyExecutingTag := io.execute.bits.tag
+    }
+  } else {
+    // If we dont have outputs. Then we say that we "finished" the tag when we are ready to accept a new
+    // vector of tokens.
+    val sIdle :: sWaitForInputPortReady :: Nil = Enum(2)
+    val regState = RegInit(sIdle)
+    switch(regState) {
+      is (sIdle) {
+        when (io.execute.valid) {
+          regCurrentlyExecutingTag := io.execute.bits.tag
+          regState := sWaitForInputPortReady
+        }
+      }
+      is (sWaitForInputPortReady) {
+        when(io.inputPortsReady) {
+          regLogicalTagComplete := regCurrentlyExecutingTag
+          regState := sIdle
+        }
+      }
+    }
   }
 }
 
@@ -268,6 +290,7 @@ class TopLevelPorts(swPorts: SwIO, mainReactorPorts: ReactorIO)(implicit val p: 
   ltcHandler.execute.bits := io.execute.bits
   ltcHandler.outputFires zip outputPorts foreach{f => f._1 := f._2.io.fire}
   io.logicalTagComplete := ltcHandler.logicalTagComplete
+  ltcHandler.inputPortsReady := inputPorts.map(_.io.execute.ready).reduce(_ || _)
 
   outputPorts.foreach(_.io.consume := io.swCmd === SwCommandType.read)
 
@@ -281,10 +304,10 @@ class TopLevelPorts(swPorts: SwIO, mainReactorPorts: ReactorIO)(implicit val p: 
 
 
   // Handle DMA for the arrayports.
-  require(arrayInputPorts.size <= 1, "Initial version only supports single read to DRAM")
-  require(arrayOutputPorts.size <= 1, "Initial version only supports single write to DRAM")
+  require(arrayOutputPorts.size <= 1, "Currently only supports a single array port from FPGA to SW.")
 
   // Handle DRAM writes
+  // TODO: Handle multiple connections. Probably be doing them sequentially?
   for (port <- arrayOutputPorts) {
     val dmaWriter = Module(new StreamWriter(
       new StreamWriterParams(streamWidth = port.io.main.genData.getWidth, mem = p.toMemReqParams(), chanID = 1, maxBeats = 1)
@@ -324,40 +347,57 @@ class TopLevelPorts(swPorts: SwIO, mainReactorPorts: ReactorIO)(implicit val p: 
     dmaIO.wrRsp <> dmaWriter.io.rsp
   }
 
-  // Handle DMA reads
-  for (port <- arrayInputPorts) {
-    // Tie off unused ports
-    port.io.dma.driveDefaultsFlipped()
+  // Handle DMA reads. If we have only a single connection to SW. Then we just connect the streamReader
+  // directly. If there are more. Then we use a MultiChanReadPort to interleave requests and responses.
+  if (arrayInputPorts.length > 0) {
+    val dmaParams = arrayInputPorts.map { _ => ReadChanParams(1, 0) }.toSeq
+    val multiChanReader = if (arrayInputPorts.length > 1) Some(Module(new MultiChanReadPort(p.toMemReqParams(), dmaParams))) else None
 
-    val dmaReader = Module(new StreamReader(
-      new StreamReaderParams(streamWidth = port.io.dma.genData.getWidth, mem = p.toMemReqParams(), chanID = 1, fifoElems = 8, maxBeats = 1, disableThrottle = true, useChiselQueue = false)
-    ))
+    for ((port, idx) <- arrayInputPorts.zipWithIndex) {
+      // Tie off unused ports
+      port.io.dma.driveDefaultsFlipped()
 
-    // Read request and control signals
-    val regRunning = RegInit(false.B)
-    dmaReader.io.baseAddr := port.io.dma.req.bits.addr
-    dmaReader.io.byteCount := (port.io.dma.req.bits.size * port.io.dma.genToken.bytesPerToken.U).asUInt
-    dmaReader.io.start := regRunning
-    dmaReader.io.doInit := false.B // FIXME: Check this
-    dmaReader.io.initCount := 0.U // FIXME: Check this
-    port.io.dma.req.ready := !regRunning
-    when(port.io.dma.req.fire) {
-      dmaReader.io.start := true.B
-      regRunning := true.B
+      val dmaReader = Module(new StreamReader(
+        new StreamReaderParams(streamWidth = port.io.dma.genData.getWidth, mem = p.toMemReqParams(), chanID = idx, fifoElems = 8, maxBeats = 1, disableThrottle = true, useChiselQueue = false)
+      ))
+
+      // Read request and control signals
+      val regRunning = RegInit(false.B)
+      dmaReader.io.baseAddr := port.io.dma.req.bits.addr
+      dmaReader.io.byteCount := (port.io.dma.req.bits.size * port.io.dma.genToken.bytesPerToken.U).asUInt
+      dmaReader.io.start := regRunning
+      dmaReader.io.doInit := false.B // FIXME: Check this
+      dmaReader.io.initCount := 0.U // FIXME: Check this
+      port.io.dma.req.ready := !regRunning
+      when(port.io.dma.req.fire) {
+        dmaReader.io.start := true.B
+        regRunning := true.B
+      }
+
+      when(dmaReader.io.finished) {
+        regRunning := false.B
+      }
+
+      // Read response
+      port.io.dma.resp.valid := dmaReader.io.out.valid
+      port.io.dma.resp.bits.data := dmaReader.io.out.bits
+      dmaReader.io.out.ready := port.io.dma.resp.ready
+
+      // Connect to top-level (in case of only a single connection)
+      // or connect to the request interleaver if there are many
+      if (multiChanReader.isDefined) {
+        dmaReader.io.req <> multiChanReader.get.io.req(idx)
+        dmaReader.io.rsp <> multiChanReader.get.io.rsp(idx)
+      } else {
+        dmaIO.rdReq <> dmaReader.io.req
+        dmaIO.rdRsp <> dmaReader.io.rsp
+      }
     }
 
-    when(dmaReader.io.finished) {
-      regRunning := false.B
+    if (multiChanReader.isDefined) {
+      multiChanReader.get.io.memReq <> dmaIO.rdReq
+      multiChanReader.get.io.memRsp <> dmaIO.rdRsp
     }
-
-    // Read response
-    port.io.dma.resp.valid := dmaReader.io.out.valid
-    port.io.dma.resp.bits.data := dmaReader.io.out.bits
-    dmaReader.io.out.ready := port.io.dma.resp.ready
-
-    // Connect to top-level
-    dmaIO.rdReq <> dmaReader.io.req
-    dmaIO.rdRsp <> dmaReader.io.rsp
   }
 }
 

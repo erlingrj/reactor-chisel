@@ -287,7 +287,7 @@ class EventQueueStandalone(p: EventQueueParams) extends EventQueue(p) {
 
 
 class EventQueueCodesign(p: EventQueueParams) extends EventQueue(p) {
-  val shutdownIO = IO(new ShutdownCommand())
+  val shutdownIO = IO(Input(new ShutdownCommand()))
   val tagIO = IO(Input(Tag()))
 
   def doShutdown = shutdownIO.valid
