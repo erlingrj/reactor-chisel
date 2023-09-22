@@ -108,7 +108,7 @@ object Schedule {
  * @param initialSchedule
  * @param periodicSchedule
  */
-case class EventQueueParams(
+case class TokenQueueParams(
     nLocalTriggers: Int,
   nTimers: Int,
   nPhyActions: Int,
@@ -124,10 +124,10 @@ case class EventQueueParams(
   def scheduleWidthBits = Math.max(log2Ceil(scheduleWidth), 1)
 
   require(nLocalTriggers == (nTimers + nPhyActions))
-  require(nLocalTriggers == shutdownTriggers.triggers.size, "[EventQueue] Mismatch between nLocalTriggers and the widths of the schedules")
+  require(nLocalTriggers == shutdownTriggers.triggers.size, "[TokenQueue] Mismatch between nLocalTriggers and the widths of the schedules")
 }
 
-class EventQueueIO(p: EventQueueParams) extends Bundle {
+class TokenQueueIO(p: TokenQueueParams) extends Bundle {
   val nextEventTag = Decoupled(Tag())
   val triggerVec = Vec(p.scheduleWidth, Output(Bool()))
   val terminate = Output(Bool())
@@ -154,8 +154,8 @@ class EventQueueIO(p: EventQueueParams) extends Bundle {
  * @param p
  */
 // FIXME: There are more efficient ways of handling the initial/periodic schedule. Also consider when they are identical
-class EventQueue(p: EventQueueParams) extends Module {
-  val io = IO(new EventQueueIO(p))
+class TokenQueue(p: TokenQueueParams) extends Module {
+  val io = IO(new TokenQueueIO(p))
   io.driveDefaults()
 
   val regNET = RegInit(Tag.NEVER)
@@ -240,7 +240,7 @@ class EventQueue(p: EventQueueParams) extends Module {
     }
 
   } else {
-    println("Empty schedule. Only compiling a shell for the EventQueue")
+    println("Empty schedule. Only compiling a shell for the TokenQueue")
     regNETValid := true.B
     regNET := Tag.NEVER
   }
@@ -249,7 +249,7 @@ class EventQueue(p: EventQueueParams) extends Module {
   assert(!(io.nextEventTag.ready && !io.nextEventTag.valid))
 }
 
-class EventQueueStandalone(p: EventQueueParams) extends EventQueue(p) {
+class TokenQueueStandalone(p: TokenQueueParams) extends TokenQueue(p) {
   if (p.shutdownTime != Time.NEVER) {
     val regDone = RegInit(false.B)
 
@@ -286,7 +286,7 @@ class EventQueueStandalone(p: EventQueueParams) extends EventQueue(p) {
 }
 
 
-class EventQueueCodesign(p: EventQueueParams) extends EventQueue(p) {
+class TokenQueueCodesign(p: TokenQueueParams) extends TokenQueue(p) {
   val shutdownIO = IO(Input(new ShutdownCommand()))
   val tagIO = IO(Input(Tag()))
 
@@ -321,7 +321,7 @@ class EventQueueCodesign(p: EventQueueParams) extends EventQueue(p) {
   }
 }
 
-class PhysicalActionEventQueueIO(nPhysicalActions: Int, nTimers: Int) extends Bundle {
+class PhysicalActionTokenQueueIO(nPhysicalActions: Int, nTimers: Int) extends Bundle {
   val phySchedules = Vec(nPhysicalActions, new PureTokenWriteSlave)
   val nextEventTag = Decoupled(Tag())
   val triggerVec = Output(Vec(nTimers+nPhysicalActions, Bool()))
@@ -338,8 +338,8 @@ class PhysicalActionEventQueueIO(nPhysicalActions: Int, nTimers: Int) extends Bu
   }
 }
 
-class PhysicalActionEventQueue(p: EventQueueParams) extends Module {
-  val io = IO(new PhysicalActionEventQueueIO(p.nPhyActions, p.nTimers))
+class PhysicalActionTokenQueue(p: TokenQueueParams) extends Module {
+  val io = IO(new PhysicalActionTokenQueueIO(p.nPhyActions, p.nTimers))
   io.driveDefaults()
 
   if(p.nPhyActions > 0) {
@@ -416,7 +416,7 @@ object PhysicalActionConnector {
   }
 }
 
-class EventQueueMuxIO(p: EventQueueParams) extends Bundle {
+class TokenQueueMuxIO(p: TokenQueueParams) extends Bundle {
   val nextEventTag = Decoupled(Tag())
   val triggerVec = Vec(p.scheduleWidth, Output(Bool()))
   val terminate = Output(Bool())
@@ -438,22 +438,22 @@ class EventQueueMuxIO(p: EventQueueParams) extends Bundle {
   }
 }
 
-class EventQueueMux(p: EventQueueParams)(implicit val cfg: GlobalReactorConfig) extends Module {
-  val io = IO(new EventQueueMuxIO(p))
+class TokenQueueMux(p: TokenQueueParams)(implicit val cfg: GlobalReactorConfig) extends Module {
+  val io = IO(new TokenQueueMuxIO(p))
   io.driveDefaults()
 
 
   val localEventQ = {
-    if (cfg.standalone) Module(new EventQueueStandalone((p)))
+    if (cfg.standalone) Module(new TokenQueueStandalone((p)))
     else {
-      val eq = Module(new EventQueueCodesign(p))
+      val eq = Module(new TokenQueueCodesign(p))
       eq.shutdownIO := io.shutdownCmd
       eq.tagIO := io.tagAdvanceGrant
       eq
     }
   }
   localEventQ.io.driveDefaultsFlipped()
-  val physicalEventQ = if (p.nPhyActions > 0) Some(Module(new PhysicalActionEventQueue(p))) else None
+  val physicalEventQ = if (p.nPhyActions > 0) Some(Module(new PhysicalActionTokenQueue(p))) else None
 
   io.terminate := localEventQ.io.terminate
 

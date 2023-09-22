@@ -10,7 +10,7 @@ import scala.collection.mutable.ArrayBuffer
 abstract class ReactorPortIO[T1 <: Data, T2 <: Token[T1]] extends Bundle {
 
 }
-case class InputPortConfig[T1 <: Data, T2 <: Token[T1]] (
+case class InputPortArbiterConfig[T1 <: Data, T2 <: Token[T1]] (
                                    genData: T1,
                                    genToken : T2,
                                    nReaders: Int
@@ -19,12 +19,12 @@ case class InputPortConfig[T1 <: Data, T2 <: Token[T1]] (
 }
 
 // Concrete implementation to avoid type erasure problems: https://stackoverflow.com/questions/40237011/non-variable-type-argument
-trait InputPortSingleConfig[T1 <: Data] extends InputPortConfig[T1, SingleToken[T1]]
-trait InputPortArrayConfig[T1 <: Data] extends InputPortConfig[T1, ArrayToken[T1]]
-trait InputPortPureConfig extends InputPortConfig[UInt, PureToken]
+trait InputPortArbiterSingleConfig[T1 <: Data] extends InputPortArbiterConfig[T1, SingleToken[T1]]
+trait InputPortArbiterArrayConfig[T1 <: Data] extends InputPortArbiterConfig[T1, ArrayToken[T1]]
+trait InputPortArbiterPureConfig extends InputPortArbiterConfig[UInt, PureToken]
 
 
-abstract class InputPortIO[T1 <: Data, T2 <: Token[T1]](c: InputPortConfig[T1,T2]) extends ReactorPortIO[T1,T2] {
+abstract class InputPortArbiterIO[T1 <: Data, T2 <: Token[T1]](c: InputPortArbiterConfig[T1,T2]) extends ReactorPortIO[T1,T2] {
   val inward: Vec[TokenReadSlave[T1,T2]]
   val outward: TokenReadMaster[T1,T2]
 
@@ -39,21 +39,21 @@ abstract class InputPortIO[T1 <: Data, T2 <: Token[T1]](c: InputPortConfig[T1,T2
     })
   }
 }
-class InputPortSingleValueIO[T1 <: Data](c: InputPortConfig[T1, SingleToken[T1]]) extends InputPortIO(c) {
+class InputPortArbiterSingleValueIO[T1 <: Data](c: InputPortArbiterConfig[T1, SingleToken[T1]]) extends InputPortArbiterIO(c) {
   val inward = Vec(c.nReaders, new SingleTokenReadSlave(c.genData))
   val outward = new SingleTokenReadMaster(c.genData)
 }
-class InputPortPureIO(c: InputPortConfig[UInt, PureToken]) extends InputPortIO(c) {
+class InputPortArbiterPureIO(c: InputPortArbiterConfig[UInt, PureToken]) extends InputPortArbiterIO(c) {
   val inward = Vec(c.nReaders, new PureTokenReadSlave)
   val outward = new PureTokenReadMaster
 }
-class InputPortArrayIO[T1 <: Data](c: InputPortConfig[T1, ArrayToken[T1]]) extends InputPortIO(c) {
+class InputPortArbiterArrayIO[T1 <: Data](c: InputPortArbiterConfig[T1, ArrayToken[T1]]) extends InputPortArbiterIO(c) {
   val inward = Vec(c.nReaders, new ArrayTokenReadSlave(c.genData, c.genToken))
   val outward = new ArrayTokenReadMaster(c.genData, c.genToken)
 }
 
-abstract class InputPort[T1 <: Data, T2 <: Token[T1]](c: InputPortConfig[T1,T2]) extends Module {
-  val io: InputPortIO[T1,T2]
+abstract class InputPortArbiter[T1 <: Data, T2 <: Token[T1]](c: InputPortArbiterConfig[T1,T2]) extends Module {
+  val io: InputPortArbiterIO[T1,T2]
   def main() = {
     io.driveDefaults()
     io.inward.foreach(_ <> io.outward)
@@ -94,8 +94,8 @@ abstract class InputPort[T1 <: Data, T2 <: Token[T1]](c: InputPortConfig[T1,T2])
   }
 }
 
-class InputPortSingleValue[T1 <: Data](c: InputPortConfig[T1, SingleToken[T1]]) extends InputPort(c) {
-  val io = IO(new InputPortSingleValueIO(c))
+class InputPortArbiterSingleValue[T1 <: Data](c: InputPortArbiterConfig[T1, SingleToken[T1]]) extends InputPortArbiter(c) {
+  val io = IO(new InputPortArbiterSingleValueIO(c))
   main()
   var downstreamIdx = 0
   var upstreamConnected = false
@@ -114,8 +114,8 @@ class InputPortSingleValue[T1 <: Data](c: InputPortConfig[T1, SingleToken[T1]]) 
   def <<(up: Vec[SingleTokenReadMaster[T1]]): Unit = this << up(0)
 }
 
-class InputPortArray[T1 <: Data](c: InputPortConfig[T1, ArrayToken[T1]]) extends InputPort(c) {
-  val io = IO(new InputPortArrayIO(c))
+class InputPortArbiterArray[T1 <: Data](c: InputPortArbiterConfig[T1, ArrayToken[T1]]) extends InputPortArbiter(c) {
+  val io = IO(new InputPortArbiterArrayIO(c))
   main()
   var downstreamIdx = 0
   var upstreamConnected = false
@@ -135,8 +135,8 @@ class InputPortArray[T1 <: Data](c: InputPortConfig[T1, ArrayToken[T1]]) extends
 
   def <<(up: Vec[ArrayTokenReadMaster[T1]]): Unit = this << up(0)
 }
-class InputPortPure[T1 <: Data](c: InputPortConfig[UInt, PureToken]) extends InputPort(c) {
-  val io = IO(new InputPortPureIO(c))
+class InputPortArbiterPure[T1 <: Data](c: InputPortArbiterConfig[UInt, PureToken]) extends InputPortArbiter(c) {
+  val io = IO(new InputPortArbiterPureIO(c))
   main()
 
   var downstreamIdx = 0
@@ -158,14 +158,14 @@ class InputPortPure[T1 <: Data](c: InputPortConfig[UInt, PureToken]) extends Inp
   def <<(up: Vec[PureTokenReadMaster]): Unit = this << up(0)
 }
 
-case class OutputPortConfig[T1 <: Data, T2 <: Token[T1]](
+case class OutputPortArbiterConfig[T1 <: Data, T2 <: Token[T1]](
                                       genData: T1,
                                       genToken: T2,
                                       nWriters: Int
                                       ) {
   def nWritersWidth: Width = if (nWriters == 1) 1.W else log2Ceil(nWriters).W
 }
-abstract class OutputPortIO[T1 <: Data, T2 <: Token[T1]](c: OutputPortConfig[T1, T2]) extends ReactorPortIO[T1,T2] {
+abstract class OutputPortArbiterIO[T1 <: Data, T2 <: Token[T1]](c: OutputPortArbiterConfig[T1, T2]) extends ReactorPortIO[T1,T2] {
   val inward: Vec[TokenWriteSlave[T1,T2]]
   val outward: TokenWriteMaster[T1,T2]
 
@@ -179,21 +179,21 @@ abstract class OutputPortIO[T1 <: Data, T2 <: Token[T1]](c: OutputPortConfig[T1,
   }
 }
 
-class OutputPortSingleValueIO[T1 <: Data](c: OutputPortConfig[T1, SingleToken[T1]]) extends OutputPortIO(c) {
+class OutputPortArbiterSingleValueIO[T1 <: Data](c: OutputPortArbiterConfig[T1, SingleToken[T1]]) extends OutputPortArbiterIO(c) {
   val inward = Vec(c.nWriters, new SingleTokenWriteSlave(c.genData))
   val outward = new SingleTokenWriteMaster(c.genData)
 }
-class OutputPortPureIO(c: OutputPortConfig[UInt, PureToken]) extends OutputPortIO(c) {
+class OutputPortArbiterPureIO(c: OutputPortArbiterConfig[UInt, PureToken]) extends OutputPortArbiterIO(c) {
   val inward = Vec(c.nWriters, new PureTokenWriteSlave)
   val outward = new PureTokenWriteMaster
 }
-class OutputPortArrayIO[T1 <: Data](c: OutputPortConfig[T1, ArrayToken[T1]]) extends OutputPortIO(c) {
+class OutputPortArbiterArrayIO[T1 <: Data](c: OutputPortArbiterConfig[T1, ArrayToken[T1]]) extends OutputPortArbiterIO(c) {
   val inward = Vec(c.nWriters, new ArrayTokenWriteSlave(c.genData, c.genToken))
   val outward = new ArrayTokenWriteMaster(c.genData, c.genToken)
 }
 
-abstract class OutputPort[T1 <: Data, T2 <: Token[T1]](c: OutputPortConfig[T1, T2]) extends Module {
-  val io: OutputPortIO[T1,T2]
+abstract class OutputPortArbiter[T1 <: Data, T2 <: Token[T1]](c: OutputPortArbiterConfig[T1, T2]) extends Module {
+  val io: OutputPortArbiterIO[T1,T2]
 
   def main(): Unit = {
     io.driveDefaults()
@@ -202,7 +202,7 @@ abstract class OutputPort[T1 <: Data, T2 <: Token[T1]](c: OutputPortConfig[T1, T
       io.inward(0) <> io.outward
     } else {
       val regCount = RegInit(0.U(c.nWritersWidth + 1.W))
-
+      
       io.inward(regCount) <> io.outward
       when(io.inward(regCount).fire) {
         regCount := regCount + 1.U
@@ -222,8 +222,8 @@ abstract class OutputPort[T1 <: Data, T2 <: Token[T1]](c: OutputPortConfig[T1, T
   var downstreamConnected = false
 }
 
-class OutputPortSingleValue[T1 <: Data](c: OutputPortConfig[T1, SingleToken[T1]]) extends OutputPort(c){
-  val io = IO(new OutputPortSingleValueIO(c))
+class OutputPortArbiterSingleValue[T1 <: Data](c: OutputPortArbiterConfig[T1, SingleToken[T1]]) extends OutputPortArbiter(c){
+  val io = IO(new OutputPortArbiterSingleValueIO(c))
   main()
 
   def <<(up: SingleTokenWriteMaster[T1]): Unit = {
@@ -238,8 +238,8 @@ class OutputPortSingleValue[T1 <: Data](c: OutputPortConfig[T1, SingleToken[T1]]
     downstreamConnected = true
   }
 }
-class OutputPortArray[T1 <: Data](c: OutputPortConfig[T1, ArrayToken[T1]]) extends OutputPort(c){
-  val io = IO(new OutputPortArrayIO(c))
+class OutputPortArbiterArray[T1 <: Data](c: OutputPortArbiterConfig[T1, ArrayToken[T1]]) extends OutputPortArbiter(c){
+  val io = IO(new OutputPortArbiterArrayIO(c))
   main()
 
   def <<(up: ArrayTokenWriteMaster[T1]): Unit = {
@@ -256,8 +256,8 @@ class OutputPortArray[T1 <: Data](c: OutputPortConfig[T1, ArrayToken[T1]]) exten
   }
 }
 
-class OutputPortPure[T1 <: Data](c: OutputPortConfig[T1, ArrayToken[T1]]) extends OutputPort(c){
-  val io = IO(new OutputPortArrayIO(c))
+class OutputPortArbiterPure[T1 <: Data](c: OutputPortArbiterConfig[T1, ArrayToken[T1]]) extends OutputPortArbiter(c){
+  val io = IO(new OutputPortArbiterArrayIO(c))
   main()
 
   def <<(up: PureTokenWriteMaster): Unit = {
@@ -288,7 +288,7 @@ class OutputPortPure[T1 <: Data](c: OutputPortConfig[T1, ArrayToken[T1]]) extend
  * @tparam T1
  *
  */
-class InputPortInwardConnectionFactory[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) extends CircuitFactory {
+class InputPortArbiterInwardConnectionFactory[T1 <: Data, T2 <: Token[T1]](genData: T1, genToken: T2) extends CircuitFactory {
 
   // Array of the downstream Input ports of contained reactors
   // An ArrayBuffer is used to "iteratively" grow this array
@@ -327,9 +327,9 @@ class InputPortInwardConnectionFactory[T1 <: Data, T2 <: Token[T1]](genData: T1,
     val inputPorts = Seq.fill(nDownstreamInwards)(
       Module(
         genToken match {
-          case t: SingleToken[T1] => new InputPortSingleValue(InputPortConfig(genData, new SingleToken(genData), 1))
-          case t: ArrayToken[T1] => new InputPortArray(InputPortConfig(genData, genToken.asInstanceOf[ArrayToken[T1]],1))
-          case t: PureToken => new InputPortPure(InputPortConfig(UInt(0.W), new PureToken, 1))
+          case t: SingleToken[T1] => new InputPortArbiterSingleValue(InputPortArbiterConfig(genData, new SingleToken(genData), 1))
+          case t: ArrayToken[T1] => new InputPortArbiterArray(InputPortArbiterConfig(genData, genToken.asInstanceOf[ArrayToken[T1]],1))
+          case t: PureToken => new InputPortArbiterPure(InputPortArbiterConfig(UInt(0.W), new PureToken, 1))
         }
     ))
     for (i <- 0 until nDownstreamInwards) {
@@ -341,7 +341,7 @@ class InputPortInwardConnectionFactory[T1 <: Data, T2 <: Token[T1]](genData: T1,
   }
 }
 
-class SingleValueInputPortInwardConnectionFactory[T1 <: Data](genData: T1) extends InputPortInwardConnectionFactory(
+class SingleValueInputPortArbiterInwardConnectionFactory[T1 <: Data](genData: T1) extends InputPortArbiterInwardConnectionFactory(
   genData,
   new SingleToken(genData),
 ) {}

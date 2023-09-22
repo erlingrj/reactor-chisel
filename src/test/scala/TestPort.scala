@@ -14,8 +14,8 @@ import reactor.test.ReactorSim
 class TestPort extends AnyFlatSpec with ChiselScalatestTester {
   behavior of "PureEvent InputPort"
   it should "initialize" in {
-    test(new InputPortPure(
-      InputPortConfig(
+    test(new InputPortArbiterPure(
+      InputPortArbiterConfig(
         genData = UInt(0.W),
         genToken = new PureToken,
         nReaders = 1
@@ -28,8 +28,8 @@ class TestPort extends AnyFlatSpec with ChiselScalatestTester {
 
   behavior of "SingleValueEvent InputPort"
   it should "initialize" in {
-    test(new InputPortSingleValue(
-      InputPortConfig(
+    test(new InputPortArbiterSingleValue(
+      InputPortArbiterConfig(
         defData, defToken,
         nReaders = 1
       )
@@ -63,8 +63,8 @@ class TestPort extends AnyFlatSpec with ChiselScalatestTester {
 
   behavior of "SingleValueEvent OutputPort"
   it should "initialize" in {
-    test(new OutputPortSingleValue(
-      OutputPortConfig(
+    test(new OutputPortArbiterSingleValue(
+      OutputPortArbiterConfig(
         defData, defToken,
         nWriters = 1
       )
@@ -75,8 +75,8 @@ class TestPort extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   it should "work with multiple writers" in {
-    test(new OutputPortSingleValue(
-      OutputPortConfig(
+    test(new OutputPortArbiterSingleValue(
+      OutputPortArbiterConfig(
         defData, defToken,
         nWriters = 2
       )

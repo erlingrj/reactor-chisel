@@ -13,8 +13,8 @@ import org.scalatest.flatspec.AnyFlatSpec
 import chisel3.experimental.VecLiterals._
 
 class R1 extends Module {
-  val in1 = Module(new InputPortSingleValue(
-    InputPortConfig(
+  val in1 = Module(new InputPortArbiterSingleValue(
+    InputPortArbiterConfig(
       defData,
       defToken,
       nReaders = 1
@@ -38,24 +38,24 @@ class TestConnectionBuilder extends Module {
   }
   val io = IO(new TestIO)
 
-  val out = Module(new OutputPortSingleValue(
-    OutputPortConfig(
+  val out = Module(new OutputPortArbiterSingleValue(
+    OutputPortArbiterConfig(
       defData, defToken,
       nWriters = 1
     )
   ))
   out.io.plugInwards()
 
-  val in1 = Module(new InputPortSingleValue(
-    InputPortConfig(
+  val in1 = Module(new InputPortArbiterSingleValue(
+    InputPortArbiterConfig(
       defData, defToken,
       nReaders = 1
     )
   ))
   in1.io.plugInwards()
 
-  val in2 = Module(new InputPortSingleValue(
-    InputPortConfig(
+  val in2 = Module(new InputPortArbiterSingleValue(
+    InputPortArbiterConfig(
       defData, defToken,
       nReaders = 1
     )

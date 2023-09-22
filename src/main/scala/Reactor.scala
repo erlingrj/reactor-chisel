@@ -21,6 +21,7 @@ package object globals {
 case class GlobalReactorConfig(
                               timeout: Time,
                               standalone: Boolean,
+                              triggerLatency: Int = 4
                               )
 
 abstract class ReactorIO extends Bundle {
@@ -112,10 +113,9 @@ abstract class Reactor extends Module {
 
   val statusIO = IO(new ReactorStatusIO)
 
-  // FIXME: These vars should maybe be prependend with _
   var reactions: ArrayBuffer[Reaction] = new ArrayBuffer()
-  var inPorts: ArrayBuffer[InputPort[_ <: Data, _ <: Token[_<: Data]]] = new ArrayBuffer()
-  var outPorts: ArrayBuffer[OutputPort[_ <: Data, _ <: Token[_<: Data]]] = new ArrayBuffer()
+  var inPorts: ArrayBuffer[InputPortArbiter[_ <: Data, _ <: Token[_<: Data]]] = new ArrayBuffer()
+  var outPorts: ArrayBuffer[OutputPortArbiter[_ <: Data, _ <: Token[_<: Data]]] = new ArrayBuffer()
   var connections: ArrayBuffer[Connection[_ <: Data,_ <: Token[_<: Data]]] = new ArrayBuffer()
   var childReactors: ArrayBuffer[Reactor] = new ArrayBuffer
   var localTriggers: ArrayBuffer[TriggerPureVirtual] = new ArrayBuffer()

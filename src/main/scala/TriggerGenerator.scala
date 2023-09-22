@@ -33,12 +33,14 @@ class MainClockIO extends Bundle {
     setTime.bits := Tag(0)
   }
 }
-class MainClock extends Module {
+class MainClock(implicit cfg: GlobalReactorConfig) extends Module {
   val io = IO(new MainClockIO())
 
-  val regClock = RegInit(Tag(0))
+  // We initialize the clock to the triggerLatecy. This accounts for the trigger latency be releasing
+  // everything a bit early
+  val regClock = RegInit(Tag(cfg.triggerLatency))
   when(io.setTime.valid) {
-    regClock := io.setTime.bits
+    regClock := io.setTime.bits + cfg.triggerLatency.U
   }.otherwise {
     regClock := regClock + 1.U
   }
@@ -100,7 +102,7 @@ class TriggerGenerator(mainReactor: Reactor)(implicit val cfg: GlobalReactorConf
   // Create the schedule and the event queue.
   val (hyperperiod, initialSchedule, periodicSchedule, shutdown) = createSchedules(mainReactor.allTriggerConfigs().map(_.cfg).toSeq)
   printSchedules((initialSchedule, periodicSchedule))
-  val eventQueueParams = EventQueueParams(
+  val tokenQueueParams = TokenQueueParams(
     nTriggers,
     nTimers,
     nPhys,
@@ -110,13 +112,13 @@ class TriggerGenerator(mainReactor: Reactor)(implicit val cfg: GlobalReactorConf
     initialSchedule,
     periodicSchedule)
 
-  val eventQueue = Module(new EventQueueMux(eventQueueParams))
-  eventQueue.io.driveDefaultsFlipped()
-  io.terminate := eventQueue.io.terminate
-  io.nextEventTag := eventQueue.io.nextEventTag.bits
-  eventQueue.io.phySchedules zip io.phySchedules foreach {f => f._1 <> f._2}
+  val tokenQueue = Module(new TokenQueueMux(tokenQueueParams))
+  tokenQueue.io.driveDefaultsFlipped()
+  io.terminate := tokenQueue.io.terminate
+  io.nextEventTag := tokenQueue.io.nextEventTag.bits
+  tokenQueue.io.phySchedules zip io.phySchedules foreach {f => f._1 <> f._2}
   // Drive the tag signal here, from the clock. A physical action gets the current time as its tag.
-  eventQueue.io.phySchedules.foreach(_.tag := mainClock.now)
+  tokenQueue.io.phySchedules.foreach(_.tag := mainClock.now)
 
   // The scheduler
   val scheduler = Module(new Scheduler()).io
@@ -124,8 +126,8 @@ class TriggerGenerator(mainReactor: Reactor)(implicit val cfg: GlobalReactorConf
   scheduler.tagAdvanceGrant.valid := io.coordinationValid
   scheduler.now := mainClock.now
   scheduler.swInputPresent := io.inputPresent
-  scheduler.nextEventTag.valid := eventQueue.io.nextEventTag.valid
-  scheduler.nextEventTag.bits := eventQueue.io.nextEventTag.bits
+  scheduler.nextEventTag.valid := tokenQueue.io.nextEventTag.valid
+  scheduler.nextEventTag.bits := tokenQueue.io.nextEventTag.bits
   scheduler.execute <> io.execute
 
   // The following is just for debug
@@ -166,9 +168,9 @@ class TriggerGenerator(mainReactor: Reactor)(implicit val cfg: GlobalReactorConf
             when(t.req.ready) {
               when(EventMode.hasLocalEvent(regExecute.asUInt)) {
                 t.fire := true.B
-                t.req.valid := eventQueue.io.triggerVec(i)
-                t.absent := !eventQueue.io.triggerVec(i)
-                t.tag := eventQueue.io.nextEventTag.bits
+                t.req.valid := tokenQueue.io.triggerVec(i)
+                t.absent := !tokenQueue.io.triggerVec(i)
+                t.tag := tokenQueue.io.nextEventTag.bits
               }.elsewhen(EventMode.hasExternalEvent(regExecute.asUInt)) {
                 t.writeAbsent()
               }
@@ -180,7 +182,7 @@ class TriggerGenerator(mainReactor: Reactor)(implicit val cfg: GlobalReactorConf
         // Check that all events have been fired. If so, go back to accepting new events.
         when(regTriggerFired.get.asUInt.andR) {
           when(EventMode.hasLocalEvent(regExecute.asUInt)) {
-            eventQueue.io.nextEventTag.ready := true.B
+            tokenQueue.io.nextEventTag.ready := true.B
           }
           regState := sIdle
           regTriggerFired.get.foreach(_ := false.B)

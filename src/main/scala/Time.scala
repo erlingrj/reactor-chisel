@@ -8,9 +8,7 @@ class Time(val nanoseconds: Long) {
     def sec: Long = nanoseconds/1000000000
 
     def ticks: Long = nanoseconds
-
     def toNsecString: String = s"${nanoseconds} nsec"
-
     def toUsecString: String = s"${usec} usec"
     def toMsecString: String = s"${msec} msec"
     def toSecString: String = s"${sec} sec"
@@ -40,16 +38,9 @@ class Time(val nanoseconds: Long) {
 
 object Time {
   implicit val timeOrdering: Ordering[Time] = Ordering.by(_.ticks)
-  val FOREVER = new Time(Long.MaxValue)
-  val NEVER = new Time(Long.MinValue)
+  val FOREVER = new Time(Int.MaxValue)
+  val NEVER = new Time(Int.MinValue)
   def nsec: Long => Time = (n: Long) => new Time(n)
-  def usec: Long => Time = (n: Long) => new Time(n * 1000)
-  def msec: Long => Time = (n: Long) => new Time(n * 1000000)
-  def sec: Long => Time = (n: Long) => new Time(n * 1000000000)
-  def nsecs: Long => Time = nsec
-  def usecs: Long => Time = usec
-  def msecs: Long => Time = msec
-  def secs: Long => Time = sec
 }
 
 
