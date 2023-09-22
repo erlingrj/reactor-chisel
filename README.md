@@ -68,9 +68,9 @@ lfc src/HelloWorld.lf
 This will eventually produce an executable which you now can run:
 ```
 bin/lfc --trace
->
+> Tracing enabled
+> Hello from this HW reactor @              0
 ```
-
 
 
 For more information on reactors and Lingua Franca visit: www.lf-lang.org
