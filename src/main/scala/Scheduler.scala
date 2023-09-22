@@ -7,7 +7,7 @@ import chisel3.util._
 // NET: This comes from the Schedule and is the tag of the head of the event queue
 // TAG: This comes from the top-level IO (in case of co-design).
 
-// Enum of the different types of event modes. Either we have only local events (from our own EventQueue) or
+// Enum of the different types of event modes. Either we have only local events (from our own TokenQueue) or
 // we have only events from the SW. Or we have both.
 object EventMode extends ChiselEnum {
   val noEvent, localOnly, externalOnly, localAndExternal = Value
@@ -19,7 +19,7 @@ object EventMode extends ChiselEnum {
 
 class SchedulerIO extends Bundle {
   val execute = Decoupled(new ExecuteIO())
-  val nextEventTag = Input(Tag())
+  val nextEventTag = Input(Valid(Tag()))
   val tagAdvanceGrant = Input(Valid(Tag()))
   val swInputPresent = Input(Bool())
   val now = Input(Tag())
@@ -31,17 +31,25 @@ class SchedulerIO extends Bundle {
   }
 }
 
-class Scheduler extends Module {
+class Scheduler(implicit val cfg: GlobalReactorConfig) extends Module {
   val io = IO(new SchedulerIO())
   io.driveDefaults()
+  def localEventReady =
+    if (cfg.standalone)
+      io.nextEventTag.valid && io.now >=io.nextEventTag.bits
+    else
+      io.tagAdvanceGrant.valid && io.nextEventTag.valid && io.now >= io.nextEventTag.bits && io.tagAdvanceGrant.bits >= io.nextEventTag.bits
+  def externalEventReady =
+    if (cfg.standalone)
+      false.B
+    else
+      io.tagAdvanceGrant.valid && io.nextEventTag.valid && io.now >= io.tagAdvanceGrant.bits && io.tagAdvanceGrant.bits <= io.nextEventTag.bits && io.swInputPresent
 
-  def localEventReady = io.tagAdvanceGrant.valid && (io.now >= io.nextEventTag && io.tagAdvanceGrant.bits >= io.nextEventTag)
-  def externalEventReady = io.tagAdvanceGrant.valid && (io.now >= io.tagAdvanceGrant.bits && io.tagAdvanceGrant.bits <= io.nextEventTag && io.swInputPresent)
-
-  assert(!(io.tagAdvanceGrant.valid && io.tagAdvanceGrant.bits > io.nextEventTag && io.tagAdvanceGrant.bits =/= Tag.FOREVER), "[Scheduler] TAG > NET not allowed yet")
+  assert(!(io.tagAdvanceGrant.valid && io.tagAdvanceGrant.bits > io.nextEventTag.bits && io.tagAdvanceGrant.bits =/= Tag.FOREVER), "[Scheduler] TAG > NET not allowed yet")
   val sIdle :: sFiring :: sWaitForNET :: Nil = Enum(3)
   val regState = RegInit(sIdle)
 
+  // FIXME: Consider adding a register for the io.execute.bits.tag to read from instead of getting it straight from outside
   switch(regState) {
     is (sIdle) {
       when ((localEventReady || externalEventReady)) {
@@ -52,10 +60,10 @@ class Scheduler extends Module {
       io.execute.valid := true.B
       when(localEventReady && externalEventReady) {
         io.execute.bits.eventMode := EventMode.localAndExternal
-        io.execute.bits.tag := io.nextEventTag
+        io.execute.bits.tag := io.nextEventTag.bits
       }.elsewhen(localEventReady) {
         io.execute.bits.eventMode := EventMode.localOnly
-        io.execute.bits.tag := io.nextEventTag
+        io.execute.bits.tag := io.nextEventTag.bits
       }.elsewhen(externalEventReady) {
         io.execute.bits.eventMode := EventMode.externalOnly
         io.execute.bits.tag := io.tagAdvanceGrant.bits

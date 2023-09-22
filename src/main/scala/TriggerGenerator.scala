@@ -33,12 +33,14 @@ class MainClockIO extends Bundle {
     setTime.bits := Tag(0)
   }
 }
-class MainClock extends Module {
+class MainClock(implicit cfg: GlobalReactorConfig) extends Module {
   val io = IO(new MainClockIO())
 
-  val regClock = RegInit(Tag(0))
+  // We initialize the clock to the triggerLatecy. This accounts for the trigger latency be releasing
+  // everything a bit early
+  val regClock = RegInit(Tag(cfg.triggerLatency))
   when(io.setTime.valid) {
-    regClock := io.setTime.bits
+    regClock := io.setTime.bits + cfg.triggerLatency.U
   }.otherwise {
     regClock := regClock + 1.U
   }
@@ -85,7 +87,7 @@ class TriggerGeneratorIO(nTimers: Int, nPhys: Int) extends Bundle {
   }
 }
 
-class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor) extends Module {
+class TriggerGenerator(mainReactor: Reactor)(implicit val cfg: GlobalReactorConfig) extends Module {
   val nTimers = mainReactor.triggerIO.allTimerTriggers.size
   val nPhys = mainReactor.physicalIO.getAllPorts.size
   def nTriggers = nTimers + nPhys
@@ -100,36 +102,23 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
   // Create the schedule and the event queue.
   val (hyperperiod, initialSchedule, periodicSchedule, shutdown) = createSchedules(mainReactor.allTriggerConfigs().map(_.cfg).toSeq)
   printSchedules((initialSchedule, periodicSchedule))
-  val eventQueueParams = EventQueueParams(
+  val tokenQueueParams = TokenQueueParams(
     nTriggers,
+    nTimers,
+    nPhys,
     hyperperiod,
-    timeout,
+    cfg.timeout,
     shutdown,
     initialSchedule,
     periodicSchedule)
 
-  val eventQueue = if (standalone) Module(new EventQueueStandalone(eventQueueParams)) else Module(new EventQueueCodesign(eventQueueParams))
-
-  eventQueue.io.driveDefaultsFlipped()
-  io.terminate := eventQueue.io.terminate
-  io.nextEventTag := eventQueue.io.nextEventTag
-
-  val phyEventQueue = Module(new PhysicalActionEventQueue(nPhys, nTimers))
-  phyEventQueue.io.nextEventTag.ready := false.B
-  // Route the scheduling of physical actions out
-  phyEventQueue.io.phySchedules zip io.phySchedules foreach {f => f._1 <> f._2}
-
+  val tokenQueue = Module(new TokenQueueMux(tokenQueueParams))
+  tokenQueue.io.driveDefaultsFlipped()
+  io.terminate := tokenQueue.io.terminate
+  io.nextEventTag := tokenQueue.io.nextEventTag.bits
+  tokenQueue.io.phySchedules zip io.phySchedules foreach {f => f._1 <> f._2}
   // Drive the tag signal here, from the clock. A physical action gets the current time as its tag.
-  phyEventQueue.io.phySchedules.foreach(_.tag := mainClock.now)
-  val eventQPick = eventQueue.io.nextEventTag < phyEventQueue.io.nextEventTag.bits || !phyEventQueue.io.nextEventTag.valid
-  val nextEventTag = Mux(eventQPick, eventQueue.io.nextEventTag, phyEventQueue.io.nextEventTag.bits)
-
-  if(!standalone) {
-    val eq = eventQueue.asInstanceOf[EventQueueCodesign]
-    eq.shutdownIO.simultanous := io.shutdownCommand.valid && !io.shutdownCommand.independent
-    eq.shutdownIO.independent := io.shutdownCommand.valid && io.shutdownCommand.independent
-    eq.shutdownIO.independentTag := io.tagAdvanceGrant
-  }
+  tokenQueue.io.phySchedules.foreach(_.tag := mainClock.now)
 
   // The scheduler
   val scheduler = Module(new Scheduler()).io
@@ -137,7 +126,8 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
   scheduler.tagAdvanceGrant.valid := io.coordinationValid
   scheduler.now := mainClock.now
   scheduler.swInputPresent := io.inputPresent
-  scheduler.nextEventTag := nextEventTag
+  scheduler.nextEventTag.valid := tokenQueue.io.nextEventTag.valid
+  scheduler.nextEventTag.bits := tokenQueue.io.nextEventTag.bits
   scheduler.execute <> io.execute
 
   // The following is just for debug
@@ -153,9 +143,7 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
   val sIdle :: sFire :: Nil = Enum(2)
   val regState = RegInit(sIdle)
   val regExecute = RegInit(EventMode.noEvent)
-  val regWasPhysical = RegInit(false.B)
   val regTriggerFired = if (nTriggers > 0 )Some(RegInit(VecInit(Seq.fill(nTriggers)(false.B)))) else None
-
 
   switch (regState) {
     is (sIdle) {
@@ -163,7 +151,6 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
       when (scheduler.execute.valid) {
         regState := sFire
         regExecute := scheduler.execute.bits.eventMode
-        regWasPhysical := !eventQPick
       }
     }
 
@@ -181,17 +168,9 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
             when(t.req.ready) {
               when(EventMode.hasLocalEvent(regExecute.asUInt)) {
                 t.fire := true.B
-                when(regWasPhysical) {
-                  val present = phyEventQueue.io.triggerVec(i)
-                  t.req.valid := present
-                  t.absent := !present
-                  t.tag := phyEventQueue.io.nextEventTag.bits
-                }.otherwise {
-                  val present = eventQueue.io.triggerVec(i)
-                  t.req.valid := present
-                  t.absent := !present
-                  t.tag := eventQueue.io.nextEventTag
-                }
+                t.req.valid := tokenQueue.io.triggerVec(i)
+                t.absent := !tokenQueue.io.triggerVec(i)
+                t.tag := tokenQueue.io.nextEventTag.bits
               }.elsewhen(EventMode.hasExternalEvent(regExecute.asUInt)) {
                 t.writeAbsent()
               }
@@ -203,11 +182,7 @@ class TriggerGenerator(standalone: Boolean, timeout: Time, mainReactor: Reactor)
         // Check that all events have been fired. If so, go back to accepting new events.
         when(regTriggerFired.get.asUInt.andR) {
           when(EventMode.hasLocalEvent(regExecute.asUInt)) {
-            when(regWasPhysical) {
-              phyEventQueue.io.nextEventTag.ready := true.B
-            }.otherwise {
-              eventQueue.io.step := true.B
-            }
+            tokenQueue.io.nextEventTag.ready := true.B
           }
           regState := sIdle
           regTriggerFired.get.foreach(_ := false.B)

@@ -329,3 +329,33 @@ class ArrayTokenWriteSlave[T1 <: Data](genData: T1, genToken: ArrayToken[T1]) ex
   val req = Flipped(Decoupled(new ArrayTokenWrReq(genData, genToken)))
   val dat = Flipped(Decoupled(new TokenWrDat(genData)))
 }
+
+class PureTokenQueueIO extends Bundle {
+  val enq = new PureTokenWriteSlave
+  val deq = new PureTokenWriteMaster
+
+  def driveDefaults() = {
+    enq.driveDefaults()
+    deq.driveDefaults()
+  }
+}
+
+class PureElement extends Bundle {
+  val present = Bool()
+  val tag = Tag()
+}
+class PureTokenQueue(depth: Int) extends Module {
+  val io = IO(new PureTokenQueueIO)
+  io.driveDefaults()
+  val q = Module(new Queue(new PureElement, depth, flow=true))
+  io.enq.req.ready := q.io.enq.ready
+  q.io.enq.valid := io.enq.fire
+  q.io.enq.bits.present := io.enq.firedPresent()
+  q.io.enq.bits.tag := io.enq.tag
+
+  q.io.deq.ready := io.deq.req.ready
+  io.deq.tag := q.io.deq.bits.tag
+  io.deq.absent := !q.io.deq.bits.present
+  io.deq.req.valid := q.io.deq.bits.present
+  io.deq.fire := q.io.deq.fire
+}

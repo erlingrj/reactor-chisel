@@ -44,9 +44,9 @@ class TriggerPureVirtual(val cfg: TriggerConfig) {
 
   // This functions can be called after triggered reactions and the input-port is declared.
   // It will create a pure connection between the input port and the triggered reactions
-  def construct(): Seq[InputPort[UInt, PureToken]] = {
+  def construct(): Seq[InputPortArbiter[UInt, PureToken]] = {
     val conn = new PureConnectionFactory()
-    val in = Module(new InputPortPure(InputPortConfig(0.U, new PureToken, triggeredReactions.length)))
+    val in = Module(new InputPortArbiterPure(InputPortArbiterConfig(0.U, new PureToken, triggeredReactions.length)))
 
     conn.addUpstream(inputTimerPort)
     conn.addDownstream(Seq(in.io.outward))
