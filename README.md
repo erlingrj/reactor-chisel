@@ -20,7 +20,7 @@ hardware and software for SoC FPGAs at the "same level of abstraction".
 This repository is submoduled in our fork of the Lingua Franca compiler. To get
 started clone our fork and run the Chisel and Codesign tests.
 ```
-git clone www.github.com/erlingrj/lingua-franca.git && cd lingua-franca
+git clone https://github.com/erlingrj/lingua-franca.git --recursive --branch chisel && cd lingua-franca
 ./gradlew targetTest -Ptarget=Chisel
 ./gradlew targetTest -Ptarget=Cpp
 ```
