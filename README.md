@@ -20,9 +20,9 @@ hardware and software for SoC FPGAs at the "same level of abstraction".
 This repository is submoduled in our fork of the Lingua Franca compiler. To get
 started clone our fork and run the Chisel and Codesign tests.
 ```
-git clone https://github.com/erlingrj/lingua-franca.git --recursive --branch chisel && cd lingua-franca
-./gradlew targetTest -Ptarget=Chisel
-./gradlew targetTest -Ptarget=Cpp
+git clone https://github.com/erlingrj/lingua-franca.git --branch chisel3 --recursive && cd lingua-franca # Clone repo and check out the right branch
+./gradlew targetTest -Ptarget=Chisel # Run the set of Chisel-target integration tests
+./gradlew targetTest -Ptarget=Codesign # Run the set of Codesign-target integration tests
 ```
 
 This will build the compiler and run all the tests located in `test/Chisel/src`
