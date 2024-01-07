@@ -21,7 +21,8 @@ package object globals {
 case class GlobalReactorConfig(
                               timeout: Time,
                               standalone: Boolean,
-                              triggerLatency: Int = 4
+                              triggerLatency: Int = 4,
+                              clockPeriod: Time = Time.nsec(1)
                               )
 
 abstract class ReactorIO extends Bundle {
@@ -99,7 +100,7 @@ class ReactorTriggerIO(cfg: ReactorTriggerConfig) extends Bundle {
   def allTimerTriggers = localTimerTriggers ++ containedTimerTriggers
 }
 
-abstract class Reactor extends Module {
+abstract class Reactor(implicit gc: GlobalReactorConfig) extends Module {
 
   // The Inputs and Outputs of the reactor
   val io: ReactorIO

@@ -23,15 +23,14 @@ object CharacterizeUtils {
   val dummyParam = new DummyParams
   val zedboardPart = "xc7z020clg484-1"
 
-  def standalone(reactor: () => StandaloneTopReactor, buildDir: String): Unit = {
+  def standalone(reactor: () => StandaloneTopReactor, targetClockPeriod: Time, buildDir: String): Unit = {
     val genTop  = (d: DummyParams) => reactor.apply()
-    VivadoSynth.characterizePoint(dummyParam, genTop, buildDir, zedboardPart,"StandaloneTopReactor")
+    VivadoSynth.characterizePoint(dummyParam, genTop, buildDir, zedboardPart, targetClockPeriod.nsec.toInt, "StandaloneTopReactor")
   }
 
-  def codesign(reactor: () => CodesignTopReactor, buildDir: String): Unit = {
+  def codesign(reactor: () => CodesignTopReactor, targetClockPeriod: Time, buildDir: String): Unit = {
     val genTop = (d: DummyParams) => reactor.apply()
-    VivadoSynth.characterizePoint(dummyParam, genTop, buildDir, zedboardPart, "CodesignTopReactor")
-
+    VivadoSynth.characterizePoint(dummyParam, genTop, buildDir, zedboardPart, targetClockPeriod.nsec.toInt, "CodesignTopReactor")
   }
 
 }

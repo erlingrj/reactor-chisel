@@ -42,7 +42,7 @@ class MainClock(implicit cfg: GlobalReactorConfig) extends Module {
   when(io.setTime.valid) {
     regClock := io.setTime.bits + cfg.triggerLatency.U
   }.otherwise {
-    regClock := regClock + 1.U
+    regClock := regClock + cfg.clockPeriod.nanoseconds.U
   }
   io.now := regClock
 }

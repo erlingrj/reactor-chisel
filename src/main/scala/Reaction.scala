@@ -58,7 +58,7 @@ class ReactionPrecedencePorts(c: ReactionConfig) extends Bundle {
 
 class ReactionStatePorts()
 
-abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Module {
+abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0))(implicit globalReactorConfig: GlobalReactorConfig) extends Module {
   import ReactionApi.{lf_set, lf_get, lf_present}
   implicit val instance: Reaction = this
   val io: ReactionIO
@@ -80,7 +80,8 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
 
   val logicalTag = RegInit(0.U(64.W))
   val physicalTag = RegInit(0.U(64.W))
-  physicalTag := physicalTag + 1.U
+  physicalTag := physicalTag + globalReactorConfig.clockPeriod.nanoseconds.U
+
   def driveDefaults(): Unit = {
     io.driveDefaults()
     precedenceIn.foreach(_.driveDefaults())
@@ -199,7 +200,7 @@ abstract class Reaction (val c: ReactionConfig = ReactionConfig(0,0)) extends Mo
     }
   }
 
-  assert(!(regCycles > 10000.U), "[Reaction] Reaction was running for over 10000cc assumed error")
+  assert(!(regCycles > 100000000.U), "[Reaction] Reaction was running for over 10000cc assumed error")
 
   // FIXME: These debug signals should be optional
   statusIO.state := regState
