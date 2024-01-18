@@ -134,7 +134,7 @@ abstract class TokenReadMaster[T1 <: Data, T2 <: Token[T1]](gen1: T1, gen2: T2) 
   def read(addr: UInt, size: UInt): DecoupledIO[TokenRdResp[T1]]
 }
 
-class ArrayTokenReadMaster[T1 <: Data](gen1: T1, gen2: ArrayToken[T1]) extends TokenReadMaster(gen1, gen2) {
+class   ArrayTokenReadMaster[T1 <: Data](gen1: T1, gen2: ArrayToken[T1]) extends TokenReadMaster(gen1, gen2) {
   val req = Decoupled(new ArrayTokenRdReq(gen1, gen2))
   val resp = Flipped(Decoupled(new TokenRdResp(gen1)))
 
